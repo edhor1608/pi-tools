@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "backend": {
+    "kind": "auto",
+    "model": null,
+    "fallbackToActiveModel": true,
+    "maxTokens": 8192,
+    "reasoning": "high",
+    "remote": {
+      "endpointMode": "auto",
+      "originator": "pi"
+    }
+  },
+  "renderer": {
+    "kind": "compaction-summary",
+    "customType": "structured-compaction-summary",
+    "display": false
+  },
+  "debug": {
+    "notify": false
+  }
+}
