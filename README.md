@@ -153,14 +153,3 @@ bun ./scripts/analyze-session.ts ~/.pi/agent/sessions/.../session.jsonl
 ```
 
 It prints compaction metrics for saved Pi sessions.
-
-## Status
-
-Git install is ready now.
-
-The npm package name is set to `@stead/pi-tools`, but npm publishing is a separate step and only works once the `@stead` scope is available to you.
-
-## Repo
-
-- GitHub: `https://github.com/edhor1608/pi-tools`
-- Package name: `@stead/pi-tools`
