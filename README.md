@@ -77,16 +77,6 @@ Useful while developing:
 pi install /absolute/path/to/pi-tools
 ```
 
-### npm install
-
-The package name is reserved in this repo as:
-
-```bash
-pi install npm:@stead/pi-tools
-```
-
-Use that once the package has actually been published to npm.
-
 ## What Pi Loads
 
 This package exposes two separate extension resources:
