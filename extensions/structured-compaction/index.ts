@@ -1,50 +1,136 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Box, Text } from "@mariozechner/pi-tui";
 import { createStructuredCompactionArtifact, computeFileLists, getLatestStructuredCompactionArtifact } from "./artifact.ts";
 import { runStructuredCompactionBackend } from "./backend.ts";
-import { loadStructuredCompactionConfig, loadStructuredCompactionPrompts } from "./config.ts";
+import {
+	ensureStructuredCompactionDefaults,
+	loadStructuredCompactionConfig,
+	loadStructuredCompactionPrompts,
+} from "./config.ts";
 import { computeStructuredCompactionMetrics, formatStructuredCompactionStats } from "./metrics.ts";
-import { buildStructuredCompactionReport, formatStructuredCompactionReport } from "./report.ts";
+import {
+	buildStructuredCompactionReport,
+	formatStructuredCompactionReport,
+	formatStructuredCompactionReportPreview,
+} from "./report.ts";
 import { convertAgentMessagesToResponsesInput, normalizeRemoteOutputItemsForInput } from "./responses-adapter.ts";
 import { renderStructuredReplacementMessages } from "./renderer.ts";
 import type { StructuredCompactionInput } from "./types.ts";
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const REPORT_MODES = ["latest", "all"] as const;
+type StructuredCompactionReportMode = (typeof REPORT_MODES)[number];
+
+interface StructuredCompactionReportMessageDetails {
+	count: number;
+	mode: StructuredCompactionReportMode;
+	preview: string;
+	timestamp: number;
+}
 
 const notifyWarning = (enabled: boolean, notify: (message: string, type?: "info" | "warning" | "error") => void, message: string) => {
 	if (enabled) notify(message, "warning");
 };
 
+const parseReportMode = (args: string): StructuredCompactionReportMode | undefined => {
+	const trimmed = args.trim();
+	if (!trimmed) return "latest";
+	return REPORT_MODES.find((mode) => mode === trimmed);
+};
+
+const triggerCompaction = async (ctx: ExtensionCommandContext, label: string, customInstructions?: string) => {
+	if (ctx.hasUI) {
+		ctx.ui.notify(`${label} started`, "info");
+	}
+	await new Promise<void>((resolve) => {
+		ctx.compact({
+			customInstructions,
+			onComplete: () => {
+				if (ctx.hasUI) {
+					ctx.ui.notify(`${label} completed`, "info");
+				}
+				resolve();
+			},
+			onError: (error) => {
+				if (ctx.hasUI) {
+					ctx.ui.notify(`${label} failed: ${error.message}`, "error");
+				}
+				resolve();
+			},
+		});
+	});
+};
+
 export default function structuredCompactionExtension(pi: ExtensionAPI) {
-	pi.registerMessageRenderer("structured-compaction-report", (message, _options, theme) => {
+	pi.registerMessageRenderer("structured-compaction-report", (message, options, theme) => {
+		const details = message.details as StructuredCompactionReportMessageDetails | undefined;
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-		const title = theme.fg("accent", "Compaction Report");
-		box.addChild(new Text(`${title}\n${String(message.content)}`, 0, 0));
+		const modeLabel = details?.mode === "all" ? "All" : "Latest";
+		const title = theme.fg("accent", `Compaction Report (${modeLabel})`);
+		const body = options.expanded ? String(message.content) : details?.preview ?? String(message.content);
+		const hint = theme.fg(
+			"dim",
+			options.expanded
+				? `items: ${details?.count ?? 0}`
+				: details?.mode === "all"
+					? "Expand for full per-compaction details"
+					: "Expand for provider usage and continuity details",
+		);
+		box.addChild(new Text(`${title}\n${body}\n${hint}`, 0, 0));
 		return box;
 	});
 
+	pi.on("session_start", async () => {
+		await ensureStructuredCompactionDefaults();
+	});
+
 	pi.registerCommand("compaction-report", {
-		description: "Show the latest structured compaction report for this session",
-		handler: async (_args, ctx) => {
+		description: "Show structured compaction report (usage: /compaction-report [latest|all])",
+		getArgumentCompletions: (prefix) => {
+			const trimmed = prefix.trim();
+			const matches = REPORT_MODES.filter((mode) => mode.startsWith(trimmed));
+			return matches.length > 0 ? matches.map((mode) => ({ value: mode, label: mode })) : null;
+		},
+		handler: async (args, ctx) => {
+			const mode = parseReportMode(args);
+			if (!mode) {
+				ctx.ui.notify("Usage: /compaction-report [latest|all]", "warning");
+				return;
+			}
 			const items = buildStructuredCompactionReport(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
 			if (items.length === 0) {
 				ctx.ui.notify("No compactions found on the current branch", "info");
 				return;
 			}
+			const options = {
+				sessionFile: ctx.sessionManager.getSessionFile(),
+				latestOnly: mode !== "all",
+			};
 			pi.sendMessage({
 				customType: "structured-compaction-report",
-				content: formatStructuredCompactionReport(items, {
-					sessionFile: ctx.sessionManager.getSessionFile(),
-					latestOnly: true,
-				}),
+				content: formatStructuredCompactionReport(items, options),
 				display: true,
-				details: { count: items.length, timestamp: Date.now() },
+				details: {
+					count: items.length,
+					mode,
+					preview: formatStructuredCompactionReportPreview(items, options),
+					timestamp: Date.now(),
+				} satisfies StructuredCompactionReportMessageDetails,
 			});
 		},
 	});
 
+	pi.registerCommand("trigger-compact", {
+		description: "Trigger compaction immediately (optional instructions)",
+		handler: async (args, ctx) => {
+			const config = await loadStructuredCompactionConfig(ctx.cwd);
+			const instructions = args.trim() || undefined;
+			await triggerCompaction(ctx, config.enabled ? "Structured compaction" : "Pi compaction", instructions);
+		},
+	});
+
 	pi.on("session_before_compact", async (event, ctx) => {
-		const config = loadStructuredCompactionConfig(ctx.cwd);
+		const config = await loadStructuredCompactionConfig(ctx.cwd);
 		if (!config.enabled) return undefined;
 
 		const previousStructuredCompaction = getLatestStructuredCompactionArtifact(event.branchEntries);
@@ -63,7 +149,7 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 		};
 
 		try {
-			const prompts = loadStructuredCompactionPrompts(ctx.cwd, config);
+			const prompts = await loadStructuredCompactionPrompts(ctx.cwd, config);
 			const backendOutput = await runStructuredCompactionBackend(input, {
 				ctx,
 				config,
@@ -116,8 +202,8 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("context", (event, ctx) => {
-		const config = loadStructuredCompactionConfig(ctx.cwd);
+	pi.on("context", async (event, ctx) => {
+		const config = await loadStructuredCompactionConfig(ctx.cwd);
 		if (!config.enabled) return undefined;
 
 		const latestStructuredCompaction = getLatestStructuredCompactionArtifact(ctx.sessionManager.getBranch());
@@ -136,7 +222,7 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_provider_request", async (event, ctx) => {
-		const config = loadStructuredCompactionConfig(ctx.cwd);
+		const config = await loadStructuredCompactionConfig(ctx.cwd);
 		if (!config.enabled) return undefined;
 		const model = ctx.model;
 		if (!model) return undefined;

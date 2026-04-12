@@ -4,6 +4,11 @@ This directory holds model-specific system prompt append files for Pi.
 
 The `model-system-prompt` extension from `@stead/pi-tools` appends matching files to Pi's already-built system prompt for each turn.
 
+Implementation note:
+- Pi's extension API modifies the per-turn `systemPrompt` in `before_agent_start`
+- this extension appends by returning `event.systemPrompt` plus the matching fragments
+- there is no separate `systemPromptAppend` return field
+
 Resolution order:
 1. `~/.pi/agent/model-system-prompts/_default.md`
 2. `~/.pi/agent/model-system-prompts/<provider>/_default.md`

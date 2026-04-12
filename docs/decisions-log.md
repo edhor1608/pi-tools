@@ -141,3 +141,22 @@ This keeps the command tiny, avoids duplicated logic, and makes the current sess
 
 ### Consequences
 There is now one shared reporting implementation with two surfaces: the standalone analyzer script and the in-chat `/compaction-report` command.
+
+## 2026-04-12 Official Example Alignment Pass
+
+### Context
+After the first package version was working, the next step was to compare it against Pi's official extension examples to see whether any runtime patterns, command UX, or file-handling details should be tightened up.
+
+### Decision
+Keep the overall architecture, but align the implementation with Pi's official extension patterns in a few targeted ways:
+- use `getAgentDir()` instead of manually constructing `~/.pi/agent`
+- seed packaged defaults once per process and serialize those writes with `withFileMutationQueue()`
+- expand `/compaction-report` into `latest|all` modes with a better collapsed renderer
+- add `/trigger-compact` as a small manual companion command
+- document clearly that prompt appending is implemented by composing `event.systemPrompt` in `before_agent_start`
+
+### Rationale
+These changes improve correctness and polish without changing the core design. The package still stays extension-only and Pi-native, but follows the same patterns used by Pi's own examples more closely.
+
+### Consequences
+The package now matches official extension conventions more closely, does less repeated bootstrap work on normal turns, and gives users a better report/compaction control surface inside Pi.

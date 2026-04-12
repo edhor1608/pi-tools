@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { ensurePackagedDefaults } from "./shared/defaults.ts";
 
 const PROMPTS_DIR = "model-system-prompts";
@@ -9,11 +8,10 @@ const DEFAULT_FILE = "_default.md";
 
 const sanitizeSegment = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, "_");
 
-const getRoots = (cwd: string): string[] => [join(homedir(), ".pi", "agent", PROMPTS_DIR), join(cwd, ".pi", PROMPTS_DIR)];
+const getRoots = (cwd: string): string[] => [join(getAgentDir(), PROMPTS_DIR), join(cwd, ".pi", PROMPTS_DIR)];
 
-const ensureModelPromptDefaults = () => {
-	ensurePackagedDefaults(import.meta.url, "defaults/model-system-prompts", join(homedir(), ".pi", "agent", PROMPTS_DIR));
-};
+const ensureModelPromptDefaults = () =>
+	ensurePackagedDefaults(import.meta.url, "defaults/model-system-prompts", join(getAgentDir(), PROMPTS_DIR));
 
 const getPromptPaths = (cwd: string, provider: string, model: string): string[] => {
 	const providerDir = sanitizeSegment(provider);
@@ -34,11 +32,11 @@ const readPromptFile = (path: string): string | undefined => {
 
 export default function modelSystemPromptExtension(pi: ExtensionAPI) {
 	pi.on("session_start", async () => {
-		ensureModelPromptDefaults();
+		await ensureModelPromptDefaults();
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		ensureModelPromptDefaults();
+		await ensureModelPromptDefaults();
 		const model = ctx.model;
 		if (!model) return undefined;
 

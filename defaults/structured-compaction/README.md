@@ -4,7 +4,9 @@ This directory configures the `structured-compaction` extension from `@stead/pi-
 
 ## What it does
 
-The extension also registers `/compaction-report`, which posts the latest compaction report for the current branch into the chat.
+The extension also registers:
+- `/compaction-report [latest|all]` to post compaction reports into the chat
+- `/trigger-compact [instructions]` to trigger compaction manually through Pi's compaction API
 
 The extension keeps Pi's native compaction trigger and storage model, but replaces the single built-in compaction summary with a versioned `structured-replacement-history` artifact stored in `CompactionEntry.details`.
 
@@ -50,7 +52,8 @@ Runs two things:
 - `prompts/compact.md`: user prompt template for the local summary worker
 
 For reports:
-- use `/compaction-report` inside Pi for the latest compaction on the current branch
+- use `/compaction-report latest` inside Pi for the latest compaction on the current branch
+- use `/compaction-report all` to see all compactions on the current branch
 - use `bun ./scripts/analyze-session.ts <session.jsonl>` from the package repo for offline session analysis
 
 ## Config

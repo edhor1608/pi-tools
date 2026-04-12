@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
 
 const copyMissingRecursive = (sourcePath: string, targetPath: string) => {
 	if (!existsSync(sourcePath)) return;
@@ -29,7 +30,25 @@ export const getPackageRoot = (moduleUrl: string): string => {
 	}
 };
 
-export const ensurePackagedDefaults = (moduleUrl: string, packageRelativeSource: string, targetPath: string) => {
-	const packageRoot = getPackageRoot(moduleUrl);
-	copyMissingRecursive(join(packageRoot, packageRelativeSource), targetPath);
+const ensuredDefaults = new Map<string, Promise<void>>();
+
+export const ensurePackagedDefaults = (moduleUrl: string, packageRelativeSource: string, targetPath: string): Promise<void> => {
+	const key = `${moduleUrl}:${packageRelativeSource}:${targetPath}`;
+	const existing = ensuredDefaults.get(key);
+	if (existing) return existing;
+
+	const promise = (async () => {
+		const packageRoot = getPackageRoot(moduleUrl);
+		const sourcePath = join(packageRoot, packageRelativeSource);
+		const lockPath = join(targetPath, ".pi-tools.defaults.lock");
+		await withFileMutationQueue(lockPath, async () => {
+			copyMissingRecursive(sourcePath, targetPath);
+		});
+	})().catch((error) => {
+		ensuredDefaults.delete(key);
+		throw error;
+	});
+
+	ensuredDefaults.set(key, promise);
+	return promise;
 };

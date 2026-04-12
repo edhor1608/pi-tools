@@ -38,6 +38,8 @@ That makes this package useful as a complete setup:
 Pi keeps its own native base/system prompt. This extension does not replace that.
 It appends model-specific prompt fragments on top.
 
+Implementation note: Pi's extension API does this by returning a new `systemPrompt` from `before_agent_start`. There is no separate `systemPromptAppend` return field. This package appends by composing with Pi's existing prompt, not by replacing it.
+
 Why that is nice:
 - you keep Pi's normal behavior instead of fighting it
 - you can tune specific providers and models without touching Pi core
@@ -68,7 +70,7 @@ Why that is nice:
 - conversational context survives better, not just file state
 - compatible OpenAI/Codex sessions can reuse provider-native compacted history
 - non-compatible sessions still fall back safely to local compaction
-- you can inspect what happened with visible metrics and `/compaction-report`
+- you can inspect what happened with visible metrics, `/compaction-report`, and `/trigger-compact`
 
 In short: long sessions stay coherent instead of turning into a vague summary blob.
 
@@ -77,7 +79,8 @@ Main features:
 - persisted remote compaction artifacts
 - reinjection of compatible compacted history into later provider requests
 - compaction metrics in the TUI summary
-- `/compaction-report`
+- `/compaction-report latest|all`
+- `/trigger-compact [instructions]`
 
 More details:
 - [defaults/structured-compaction/README.md](defaults/structured-compaction/README.md)
@@ -180,10 +183,13 @@ Edit config and prompt templates in:
 - `~/.pi/agent/structured-compaction/prompts/compact.md`
 
 Then use Pi normally.
-Compaction runs when Pi needs it, and the latest compaction can be inspected with:
+Compaction runs when Pi needs it, and you can inspect it or force it with:
 
 ```text
-/compaction-report
+/compaction-report latest
+/compaction-report all
+/trigger-compact
+/trigger-compact preserve more implementation detail around auth and provider behavior
 ```
 
 ## Analyze A Session

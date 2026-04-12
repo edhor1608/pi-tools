@@ -1,4 +1,4 @@
-import { buildSessionContext, type CompactionEntry, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { CompactionEntry, SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { computeStructuredCompactionMetrics, type StructuredCompactionMetrics } from "./metrics.ts";
 import type { StructuredCompactionArtifact } from "./types.ts";
@@ -14,7 +14,23 @@ export interface StructuredCompactionReportItem {
 	firstAssistantAfterText?: string;
 }
 
+export interface StructuredCompactionReportFormatOptions {
+	sessionFile?: string;
+	latestOnly?: boolean;
+}
+
 const formatNumber = (value: number): string => value.toLocaleString("en-US");
+
+const selectStructuredCompactionReportItems = (
+	items: StructuredCompactionReportItem[],
+	options?: StructuredCompactionReportFormatOptions,
+): StructuredCompactionReportItem[] => (options?.latestOnly ? [items[items.length - 1]] : items);
+
+const formatSavedSummary = (item: StructuredCompactionReportItem): string =>
+	`${formatNumber(item.metrics.savedHeuristic)} (${item.metrics.reductionPercent.toFixed(1)}%)`;
+
+const formatReportListLine = (item: StructuredCompactionReportItem): string =>
+	`- ${item.entry.id} | ${item.backendKind} | saved ${formatSavedSummary(item)} | messages ${formatNumber(item.metrics.beforeMessageCount)} -> ${formatNumber(item.metrics.afterMessageCount)}`;
 
 const getPathEntries = (entries: SessionEntry[], leafId?: string | null): SessionEntry[] => {
 	if (leafId === null) return [];
@@ -119,16 +135,41 @@ export const formatStructuredCompactionReportItem = (item: StructuredCompactionR
 	return lines.join("\n");
 };
 
-export const formatStructuredCompactionReport = (
+export const formatStructuredCompactionReportPreview = (
 	items: StructuredCompactionReportItem[],
-	options?: { sessionFile?: string; latestOnly?: boolean },
+	options?: StructuredCompactionReportFormatOptions,
 ): string => {
 	if (items.length === 0) {
 		return options?.sessionFile
 			? `No compactions found for ${options.sessionFile}.`
 			: "No compactions found on the current session branch.";
 	}
-	const selected = options?.latestOnly ? [items[items.length - 1]] : items;
+	const selected = selectStructuredCompactionReportItems(items, options);
+	const header = options?.sessionFile ? [`Session: ${options.sessionFile}`, ""] : [];
+	if (options?.latestOnly) {
+		const item = selected[0];
+		return [
+			...header,
+			`Latest compaction${items.length > 1 ? ` (1 of ${items.length})` : ""}`,
+			`- id: ${item.entry.id}`,
+			`- backend: ${item.backendKind}`,
+			`- saved: ${formatSavedSummary(item)}`,
+			`- messages: ${formatNumber(item.metrics.beforeMessageCount)} -> ${formatNumber(item.metrics.afterMessageCount)}`,
+		].join("\n");
+	}
+	return [...header, `Compactions on current branch: ${selected.length}`, ...selected.map(formatReportListLine)].join("\n");
+};
+
+export const formatStructuredCompactionReport = (
+	items: StructuredCompactionReportItem[],
+	options?: StructuredCompactionReportFormatOptions,
+): string => {
+	if (items.length === 0) {
+		return options?.sessionFile
+			? `No compactions found for ${options.sessionFile}.`
+			: "No compactions found on the current session branch.";
+	}
+	const selected = selectStructuredCompactionReportItems(items, options);
 	const header = options?.sessionFile ? [`Session: ${options.sessionFile}`, ""] : [];
 	return [...header, ...selected.map(formatStructuredCompactionReportItem)].join("\n\n");
 };

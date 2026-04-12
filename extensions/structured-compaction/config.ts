@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { ensurePackagedDefaults } from "../shared/defaults.ts";
 import type { StructuredCompactionConfig, StructuredCompactionPrompts } from "./types.ts";
 
@@ -59,17 +59,12 @@ const readText = (path: string): string | undefined => {
 };
 
 const getRoots = (cwd: string) => ({
-	globalRoot: join(homedir(), ".pi", "agent", ROOT_DIR_NAME),
+	globalRoot: join(getAgentDir(), ROOT_DIR_NAME),
 	projectRoot: join(cwd, ".pi", ROOT_DIR_NAME),
 });
 
-const ensureStructuredCompactionDefaults = () => {
-	ensurePackagedDefaults(
-		import.meta.url,
-		"defaults/structured-compaction",
-		join(homedir(), ".pi", "agent", ROOT_DIR_NAME),
-	);
-};
+export const ensureStructuredCompactionDefaults = () =>
+	ensurePackagedDefaults(import.meta.url, "defaults/structured-compaction", join(getAgentDir(), ROOT_DIR_NAME));
 
 const resolveCandidatePaths = (cwd: string, relativeOrAbsolutePath: string | undefined, defaultRelativePath: string): string[] => {
 	const { globalRoot, projectRoot } = getRoots(cwd);
@@ -82,19 +77,19 @@ const resolveCandidatePaths = (cwd: string, relativeOrAbsolutePath: string | und
 
 export const getStructuredCompactionRoots = getRoots;
 
-export const loadStructuredCompactionConfig = (cwd: string): StructuredCompactionConfig => {
-	ensureStructuredCompactionDefaults();
+export const loadStructuredCompactionConfig = async (cwd: string): Promise<StructuredCompactionConfig> => {
+	await ensureStructuredCompactionDefaults();
 	const { globalRoot, projectRoot } = getRoots(cwd);
 	const globalConfig = readJson(join(globalRoot, CONFIG_FILE_NAME));
 	const projectConfig = readJson(join(projectRoot, CONFIG_FILE_NAME));
 	return deepMerge(deepMerge(DEFAULT_CONFIG, globalConfig), projectConfig);
 };
 
-export const loadStructuredCompactionPrompts = (
+export const loadStructuredCompactionPrompts = async (
 	cwd: string,
 	config: StructuredCompactionConfig,
-): StructuredCompactionPrompts => {
-	ensureStructuredCompactionDefaults();
+): Promise<StructuredCompactionPrompts> => {
+	await ensureStructuredCompactionDefaults();
 	const systemCandidates = resolveCandidatePaths(cwd, config.prompt.systemPath, SYSTEM_PROMPT_RELATIVE_PATH);
 	const compactCandidates = resolveCandidatePaths(cwd, config.prompt.compactPath, COMPACT_PROMPT_RELATIVE_PATH);
 
