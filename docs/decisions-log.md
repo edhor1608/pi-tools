@@ -160,3 +160,22 @@ These changes improve correctness and polish without changing the core design. T
 
 ### Consequences
 The package now matches official extension conventions more closely, does less repeated bootstrap work on normal turns, and gives users a better report/compaction control surface inside Pi.
+
+## 2026-04-12 Context Health Extension
+
+### Context
+The next useful UI/TUI addition was not more raw token telemetry, but a better signal for whether the current branch is healthy: subscription pressure, cache utilization, and context freshness/rot.
+
+### Decision
+Add a separate `context-health` extension that:
+- contributes one compact footer status line via `ctx.ui.setStatus()`
+- exposes `/context-health` for a detailed in-chat snapshot
+- shows subscription usage as exact when a provider exposes it, otherwise as a clearly marked estimate
+- computes cache health as a rolling cache-read ratio over recent assistant turns
+- computes rot as a compound score from context usage, turns since compaction, and uncached input since compaction
+
+### Rationale
+This keeps Pi's default footer intact while surfacing the few context-quality signals Pi itself does not show well. It also keeps the feature separately toggleable inside the package.
+
+### Consequences
+`pi-tools` now has a third extension focused on live context health, not just prompt shaping and compaction mechanics.

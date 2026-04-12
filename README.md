@@ -2,8 +2,9 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships two separate extensions that improve Pi in different parts of the same loop:
+It ships three separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
+- `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
 - `structured-compaction` improves the context Pi keeps over long sessions
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
@@ -28,9 +29,10 @@ The other preserves context after a session gets long.
 
 That makes this package useful as a complete setup:
 - better behavior at the start of a session
+- better visibility into whether the current branch is still healthy
 - better continuity later in the same session
 - one package source
-- two separately manageable extensions
+- three separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -107,6 +109,23 @@ Pi docs:
 - `https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent`
 - `https://pi.dev`
 
+## Extension 3: Context Health
+
+This extension adds a compact footer status line and a `/context-health` inspector.
+
+Why that is nice:
+- you can see whether you are actually getting cache benefit
+- you can see whether the current branch is getting stale even before a failure happens
+- subscription usage is shown as exact when a provider exposes it, otherwise as a clearly marked estimate
+- it keeps the existing Pi footer and adds one focused health line instead of replacing everything
+
+Current metrics:
+- `sub`: exact when available, otherwise estimated and marked as such
+- `cache`: rolling cache-read ratio across recent assistant turns
+- `rot`: compound freshness score based on context usage, turns since compaction, and uncached input since compaction
+
+In short: not more telemetry, but better telemetry.
+
 ## Install This Package
 
 ### Install from git
@@ -129,11 +148,12 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes two separate extension resources:
+This package exposes three separate extension resources:
 - `extensions/model-system-prompt.ts`
+- `extensions/context-health.ts`
 - `extensions/structured-compaction/index.ts`
 
-So users install one package, but can still enable or disable the two parts independently in `pi config`.
+So users install one package, but can still enable or disable the parts independently in `pi config`.
 
 That keeps the surface simple without forcing every user to use every extension.
 
@@ -174,6 +194,16 @@ Edit or add prompt fragments in:
 - or per-project in `.pi/model-system-prompts/`
 
 The extension resolves prompts from general to specific, so you can set defaults per provider or per exact model.
+
+### Context health
+
+Use it immediately after installing:
+
+```text
+/context-health
+```
+
+It also adds a live footer status line for the current branch.
 
 ### Structured compaction
 

@@ -46,6 +46,7 @@
   "pi": {
     "extensions": [
       "./extensions/model-system-prompt.ts",
+      "./extensions/context-health.ts",
       "./extensions/structured-compaction/index.ts"
     ]
   }
