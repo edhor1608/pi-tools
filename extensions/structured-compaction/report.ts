@@ -170,6 +170,12 @@ export const formatStructuredCompactionReport = (
 			: "No compactions found on the current session branch.";
 	}
 	const selected = selectStructuredCompactionReportItems(items, options);
-	const header = options?.sessionFile ? [`Session: ${options.sessionFile}`, ""] : [];
-	return [...header, ...selected.map(formatStructuredCompactionReportItem)].join("\n\n");
+	const sections = [
+		...(options?.sessionFile ? [`Session: ${options.sessionFile}`] : []),
+		options?.latestOnly
+			? `Latest compaction${items.length > 1 ? ` (1 of ${items.length} on current branch)` : ""}`
+			: `Compactions on current branch: ${selected.length}`,
+		...selected.map(formatStructuredCompactionReportItem),
+	];
+	return sections.join("\n\n");
 };
