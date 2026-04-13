@@ -202,3 +202,21 @@ This creates a third workflow primitive distinct from steering and follow-up que
 
 ### Consequences
 `pi-tools` now has a fourth extension that covers workflow state, not just prompt shaping, live health, and compaction.
+
+## 2026-04-13 Notify Extension
+
+### Context
+Pi already had the extension hooks needed for terminal title changes and fire-and-forget notifications, but the default experience stayed comparatively quiet: little indication that the agent was actively working, and no native notification when it became ready or needed user input again.
+
+### Decision
+Add a separate `notify` extension that combines two simple official-example patterns:
+- a title-bar spinner while the agent is working
+- a native terminal notification when the agent stops and is actually waiting on the user
+
+The extension also distinguishes between normal readiness, needs-input/question endings, error endings, and queued follow-up states.
+
+### Rationale
+This keeps the implementation small and Pi-native while making the terminal experience feel much more alive. The important improvement is not more telemetry, but better signalling at the exact moments when the user cares: working, ready, needs input, error.
+
+### Consequences
+`pi-tools` now has a fifth extension that improves terminal ergonomics and agent-state visibility without modifying Pi core.

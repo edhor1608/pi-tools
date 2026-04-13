@@ -2,9 +2,10 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships four separate extensions that improve Pi in different parts of the same loop:
+It ships five separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
+- `notify` makes Pi feel more alive in the terminal with title updates and native notifications
 - `workflow-todos` gives Pi a parked-next-work workflow instead of overloading follow-up queueing
 - `structured-compaction` improves the context Pi keeps over long sessions
 
@@ -21,6 +22,7 @@ Pi already has a solid base prompt and a good default compaction system. But two
 These extensions improve different parts of the same session loop:
 - model-specific prompt fragments help Pi speak to each model in a way that fits that model better
 - context health shows whether the current branch is still healthy
+- notify shows that something is happening while the agent is working and when it needs you again
 - workflow todos give the user and agent a shared parked-next-work model
 - structured compaction helps Pi carry long-running work forward with less loss of context
 
@@ -30,16 +32,18 @@ They are all context-quality tools.
 
 One shapes context before a request is sent.
 One shows whether the current branch is still healthy.
+One makes the terminal itself better at reflecting agent state.
 One gives the user and agent a shared workflow model for parked next work.
 One preserves context after a session gets long.
 
 That makes this package useful as a complete setup:
 - better behavior at the start of a session
 - better visibility into whether the current branch is still healthy
+- better visibility into whether Pi is actively working or waiting on you
 - better control over multi-step and blocked work
 - better continuity later in the same session
 - one package source
-- four separately manageable extensions
+- five separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -133,7 +137,25 @@ Current metrics:
 
 In short: not more telemetry, but better telemetry.
 
-## Extension 4: Workflow Todos
+## Extension 4: Notify
+
+This extension improves the basic terminal ergonomics of Pi without touching Pi core.
+
+Why that is nice:
+- the terminal title shows that the agent is actively working instead of looking dead
+- when Pi finishes, the title switches to a clear idle state instead of just stopping silently
+- when the assistant ends by asking for input, the notification tells you that directly
+- queued follow-ups do not produce misleading "ready" notifications between turns
+
+Current behavior:
+- while Pi is working, the terminal title shows a spinner
+- when Pi finishes normally, the title switches to a ready marker and a native terminal notification is sent
+- when Pi finishes by asking a question, the title and notification switch to a needs-input state
+- when Pi ends with an error, the title and notification switch to an error state
+
+In short: Pi feels less silent and easier to monitor from the terminal.
+
+## Extension 5: Workflow Todos
 
 This extension is not a basic todo list.
 It is a workflow system for the specific problem where the user wants to save the next thing out of their head without turning it into a queued follow-up message too early.
@@ -192,9 +214,10 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes four separate extension resources:
+This package exposes five separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
+- `extensions/notify.ts`
 - `extensions/workflow-todos.ts`
 - `extensions/structured-compaction/index.ts`
 
@@ -249,6 +272,16 @@ Use it immediately after installing:
 ```
 
 It also adds a live footer status line for the current branch.
+
+### Notify
+
+It works automatically once enabled. There is no command to remember.
+
+What you should see:
+- a spinner in the terminal title while Pi is working
+- a ready marker in the title when Pi finishes normally
+- a needs-input marker in the title when Pi ends by asking a question
+- a native terminal notification when Pi becomes ready or needs input
 
 ### Workflow todos
 
