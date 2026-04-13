@@ -1,7 +1,7 @@
 {
   "name": "@stead/pi-tools",
   "version": "0.1.0",
-  "description": "Model-specific system prompts and structured compaction for Pi",
+  "description": "Context-quality extensions for Pi: model prompts, workflow todos, context health, and structured compaction",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,9 @@
     "stead",
     "context",
     "compaction",
-    "system-prompt"
+    "system-prompt",
+    "workflow",
+    "todo"
   ],
   "files": [
     "extensions",
@@ -47,6 +49,7 @@
     "extensions": [
       "./extensions/model-system-prompt.ts",
       "./extensions/context-health.ts",
+      "./extensions/workflow-todos.ts",
       "./extensions/structured-compaction/index.ts"
     ]
   }

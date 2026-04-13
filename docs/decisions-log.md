@@ -179,3 +179,26 @@ This keeps Pi's default footer intact while surfacing the few context-quality si
 
 ### Consequences
 `pi-tools` now has a third extension focused on live context health, not just prompt shaping and compaction mechanics.
+
+## 2026-04-12 Workflow Todos Extension
+
+### Context
+The next missing workflow primitive was not another queue, but a way to park "do this next" work without auto-sending it to the agent while current work was still unresolved. The key failure mode to avoid was a blocked current task being replaced by an unrelated queued follow-up.
+
+### Decision
+Add a separate `workflow-todos` extension with a hybrid workflow model:
+- do not use todos for trivial one-step work by default
+- allow a workflow to appear naturally when work becomes multi-step or blocked
+- let both the user and the agent manage workflow todos
+- keep todo states explicit: `active`, `pending`, `blocked`, `done`, `cancelled`
+- support dependency links through `dependTo`
+- provide an editable custom UI via `/todos`
+- provide quick commands via `/todo ...`
+- expose a `workflow_todos` tool to the model
+- append the workflow concept and current workflow state into the system prompt
+
+### Rationale
+This creates a third workflow primitive distinct from steering and follow-up queueing: a parked-next-work list that is editable, branch-aware, and safe when the current task is blocked. It also gives the agent a shared model of the workflow instead of keeping all of that state only in the user's head.
+
+### Consequences
+`pi-tools` now has a fourth extension that covers workflow state, not just prompt shaping, live health, and compaction.

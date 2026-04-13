@@ -2,9 +2,10 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships three separate extensions that improve Pi in different parts of the same loop:
+It ships four separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
+- `workflow-todos` gives Pi a parked-next-work workflow instead of overloading follow-up queueing
 - `structured-compaction` improves the context Pi keeps over long sessions
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
@@ -17,22 +18,28 @@ Pi already has a solid base prompt and a good default compaction system. But two
 
 `pi-tools` addresses both.
 
-The first extension helps Pi speak to each model in a way that fits that model better.
-The second helps Pi carry long-running work forward with less loss of context.
+These extensions improve different parts of the same session loop:
+- model-specific prompt fragments help Pi speak to each model in a way that fits that model better
+- context health shows whether the current branch is still healthy
+- workflow todos give the user and agent a shared parked-next-work model
+- structured compaction helps Pi carry long-running work forward with less loss of context
 
-## Why These Two Extensions Belong Together
+## Why These Extensions Belong Together
 
-They are both context-quality tools.
+They are all context-quality tools.
 
 One shapes context before a request is sent.
-The other preserves context after a session gets long.
+One shows whether the current branch is still healthy.
+One gives the user and agent a shared workflow model for parked next work.
+One preserves context after a session gets long.
 
 That makes this package useful as a complete setup:
 - better behavior at the start of a session
 - better visibility into whether the current branch is still healthy
+- better control over multi-step and blocked work
 - better continuity later in the same session
 - one package source
-- three separately manageable extensions
+- four separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -126,6 +133,43 @@ Current metrics:
 
 In short: not more telemetry, but better telemetry.
 
+## Extension 4: Workflow Todos
+
+This extension is not a basic todo list.
+It is a workflow system for the specific problem where the user wants to save the next thing out of their head without turning it into a queued follow-up message too early.
+
+Why that is nice:
+- the user can park "do this next" work without auto-sending it to the agent
+- blocked current work stays blocked instead of being silently replaced by the next queued request
+- the agent and user can share the same workflow state
+- the list is editable through a custom UI instead of being a write-only queue
+- dependencies between todos can be modeled with `dependTo`
+
+Workflow model:
+- todo states: `active`, `pending`, `blocked`, `done`, `cancelled`
+- hybrid activation: do not use workflow todos for trivial one-step work, but allow them to appear naturally when work becomes multi-step or blocked
+- when another task appears for later, it can be parked as `pending`
+- when current work is blocked, it stays blocked and the next task does not auto-run
+
+User-facing commands:
+- `/todos` opens the editable workflow UI
+- `/todo add <text>` parks the next thing without queueing it as a follow-up message
+- `/todo activate <id>`
+- `/todo block <id> [reason]`
+- `/todo done <id>`
+- `/todo cancel <id>`
+- `/todo edit <id> <text>`
+- `/todo depend <id> <depIds>`
+- `/todo move <id> <up|down>`
+- `/todo clear-completed`
+
+Agent-facing behavior:
+- the `workflow_todos` tool is available to the model
+- the system prompt explains when to use it and when not to use it
+- the current workflow state is appended to the system prompt when a workflow exists
+
+In short: this is a better home for "next, but not yet" than the normal follow-up queue.
+
 ## Install This Package
 
 ### Install from git
@@ -148,9 +192,10 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes three separate extension resources:
+This package exposes four separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
+- `extensions/workflow-todos.ts`
 - `extensions/structured-compaction/index.ts`
 
 So users install one package, but can still enable or disable the parts independently in `pi config`.
@@ -204,6 +249,16 @@ Use it immediately after installing:
 ```
 
 It also adds a live footer status line for the current branch.
+
+### Workflow todos
+
+Use it as soon as you want to park later work without queueing it to the model:
+
+```text
+/todos
+/todo add write the changelog after this blocker is resolved
+/todo block 2 waiting on user decision
+```
 
 ### Structured compaction
 
