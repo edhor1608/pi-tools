@@ -2,10 +2,11 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships six separate extensions that improve Pi in different parts of the same loop:
+It ships seven separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
 - `context-files` lets you disable discovered AGENTS/CLAUDE context files without renaming them
+- `file-footnotes` turns inline file links in assistant messages into numbered footnotes
 - `notify` makes Pi feel more alive in the terminal with title updates and native notifications
 - `stash` stores full deferred prompts with controlled release modes
 - `structured-compaction` improves the context Pi keeps over long sessions
@@ -24,6 +25,7 @@ These extensions improve different parts of the same session loop:
 - model-specific prompt fragments help Pi speak to each model in a way that fits that model better
 - context health shows whether the current branch is still healthy
 - context-files lets you decide which discovered context files actually reach the model
+- file-footnotes makes assistant answers with many file references easier to read
 - notify shows that something is happening while the agent is working and when it needs you again
 - stash gives the user a third message lane for prompts that should be saved now and released later
 - structured compaction helps Pi carry long-running work forward with less loss of context
@@ -35,6 +37,7 @@ They are all context-quality tools.
 One shapes context before a request is sent.
 One shows whether the current branch is still healthy.
 One lets you disable inherited context files without renaming them.
+One makes file-heavy assistant answers easier to read.
 One makes the terminal itself better at reflecting agent state.
 One gives the user a deferred-prompt stash.
 One preserves context after a session gets long.
@@ -44,10 +47,11 @@ That makes this package useful as a complete setup:
 - better visibility into whether the current branch is still healthy
 - better visibility into whether Pi is actively working or waiting on you
 - control over which inherited context files actually count
+- cleaner assistant answers when many file references are involved
 - a clean way to save future prompts without queueing them too early
 - better continuity later in the same session
 - one package source
-- six separately manageable extensions
+- seven separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -178,7 +182,28 @@ Current behavior:
 
 In short: keep Pi's automatic context-file discovery, but decide which files actually count.
 
-## Extension 6: Stash
+## Extension 6: File Footnotes
+
+Pi renders markdown links inline. That works fine for short web links, but assistant answers that mention many files become hard to read when every bullet also includes a long muted absolute path.
+
+This extension patches assistant-message rendering so file links become numbered footnotes instead.
+
+Why that is nice:
+- the main sentence stays readable instead of being interrupted by long absolute paths
+- the file references still stay visible under the same message
+- non-file links keep Pi's normal inline rendering
+- the behavior is automatic once the extension is enabled
+
+Current behavior:
+- assistant file links render inline as `label[1]`, `label[2]`, and so on
+- numbered file references are listed under the same assistant message
+- web links and other non-file links keep Pi's normal inline style
+
+Implementation note: this is an internal render patch against Pi's assistant markdown component, so it may need adjustment when Pi changes its internal message renderer.
+
+In short: keep file references clickable and visible, but stop them from breaking the reading flow.
+
+## Extension 7: Stash
 
 This extension adds a third message lane.
 It is not a steering message and not a follow-up queue message. It stores a full prompt for later release.
@@ -234,10 +259,11 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes six separate extension resources:
+This package exposes seven separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
 - `extensions/context-files.ts`
+- `extensions/file-footnotes.ts`
 - `extensions/notify.ts`
 - `extensions/stash.ts`
 - `extensions/structured-compaction/index.ts`
@@ -258,6 +284,7 @@ Extensions:
 - `model-system-prompt`
 - `context-health`
 - `context-files`
+- `file-footnotes`
 - `notify`
 - `structured-compaction`
 
@@ -282,6 +309,7 @@ This is a good starting point if you want the core context setup but want `stash
         "+extensions/model-system-prompt.ts",
         "+extensions/context-health.ts",
         "+extensions/context-files.ts",
+        "+extensions/file-footnotes.ts",
         "+extensions/notify.ts",
         "+extensions/structured-compaction/index.ts",
         "-extensions/stash.ts"
@@ -350,6 +378,15 @@ What you should see:
 - a ready marker in the title when Pi finishes normally
 - a needs-input marker in the title when Pi ends by asking a question
 - a native terminal notification when Pi becomes ready or needs input
+
+### File footnotes
+
+It works automatically once enabled. There is no command to remember.
+
+What you should see:
+- file links in assistant answers stay inline as short labels
+- the full file targets move into numbered footnotes under the same message
+- normal web links still render the way Pi normally renders them
 
 ### Context files
 

@@ -1,7 +1,7 @@
 {
   "name": "@stead/pi-tools",
   "version": "0.1.0",
-  "description": "Context-quality extensions for Pi: model prompts, context-file control, notifications, stash prompts, context health, and structured compaction",
+  "description": "Context-quality extensions for Pi: model prompts, context-file control, file-link footnotes, notifications, stash prompts, context health, and structured compaction",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -26,7 +26,10 @@
     "workflow",
     "stash",
     "notification",
-    "terminal-title"
+    "terminal-title",
+    "file-links",
+    "footnotes",
+    "rendering"
   ],
   "files": [
     "extensions",
@@ -43,6 +46,7 @@
     "analyze": "bun ./scripts/analyze-session.ts",
     "test:stash-release": "bun ./scripts/test-stash-release.ts",
     "test:context-files": "bun ./scripts/test-context-files.ts",
+    "test:file-footnotes": "bun ./scripts/test-file-footnotes.ts",
     "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts"
   },
   "peerDependencies": {
@@ -56,6 +60,7 @@
       "./extensions/model-system-prompt.ts",
       "./extensions/context-health.ts",
       "./extensions/context-files.ts",
+      "./extensions/file-footnotes.ts",
       "./extensions/notify.ts",
       "./extensions/stash.ts",
       "./extensions/structured-compaction/index.ts"

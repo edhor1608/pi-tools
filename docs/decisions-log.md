@@ -315,3 +315,21 @@ This keeps the experimental planning and worktree-preparation work intact withou
 
 ### Consequences
 The main branch now returns to the smaller context-focused package surface, while `workgraph` and `parallel` continue to exist on the preserved branch for later reuse or extraction.
+
+## 2026-04-14 File Footnotes Extension
+
+### Context
+Pi's normal markdown rendering shows file links inline as a short linked label followed by the full target path in muted text. That preserves visibility, but it makes assistant answers with many file references much harder to read.
+
+### Decision
+Add a separate `file-footnotes` extension that:
+- patches Pi's internal assistant-message markdown renderer
+- detects file links and renders them inline as numbered references instead of inline full paths
+- appends a numbered footnote list under the same assistant message with the full file targets
+- leaves non-file links on Pi's normal inline rendering path
+
+### Rationale
+A companion message or on-demand readability view would be easier to implement, but noisier. The footnote-style inline patch gives the intended reading flow directly where the assistant answer is rendered.
+
+### Consequences
+`pi-tools` now has seven extensions total again. Assistant answers with many file references read more naturally, but this extension intentionally relies on Pi internals and may need updates when Pi changes its assistant markdown renderer.
