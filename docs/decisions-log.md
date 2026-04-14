@@ -301,3 +301,17 @@ This keeps the implementation small and extension-only while still solving the r
 
 ### Consequences
 `pi-tools` now has eight extensions total. Users can keep Pi's normal context-file discovery and still disable specific inherited files for a given project without renaming or deleting them.
+
+## 2026-04-14 Workgraph And Parallel Extraction
+
+### Context
+The `workgraph` and `parallel` extensions were useful, but they broadened the package away from its tighter core around prompt shaping, context control, deferred prompts, notifications, and compaction. The implementation should be preserved, but the main package should no longer ship those surfaces by default.
+
+### Decision
+Preserve the current implementation on a separate branch, `workgraph-parallel`, and remove the `workgraph` and `parallel` extensions from the main package branch.
+
+### Rationale
+This keeps the experimental planning and worktree-preparation work intact without making the main package carry a larger workflow surface than intended.
+
+### Consequences
+The main branch now returns to the smaller context-focused package surface, while `workgraph` and `parallel` continue to exist on the preserved branch for later reuse or extraction.

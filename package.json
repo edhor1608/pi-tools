@@ -1,7 +1,7 @@
 {
   "name": "@stead/pi-tools",
   "version": "0.1.0",
-  "description": "Context-quality extensions for Pi: model prompts, context-file control, notifications, stash prompts, workgraph planning, parallel worktree prep, context health, and structured compaction",
+  "description": "Context-quality extensions for Pi: model prompts, context-file control, notifications, stash prompts, context health, and structured compaction",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -24,8 +24,6 @@
     "compaction",
     "system-prompt",
     "workflow",
-    "workgraph",
-    "parallel",
     "stash",
     "notification",
     "terminal-title"
@@ -43,8 +41,6 @@
     "build": "echo 'nothing to build'",
     "check": "echo 'Test with: pi --no-extensions -e /absolute/path/to/pi-tools'",
     "analyze": "bun ./scripts/analyze-session.ts",
-    "test:workgraph-lifecycle": "bun ./scripts/test-workgraph-session-lifecycle.ts",
-    "test:parallel-prepare": "bun ./scripts/test-workgraph-parallel-prepare.ts",
     "test:stash-release": "bun ./scripts/test-stash-release.ts",
     "test:context-files": "bun ./scripts/test-context-files.ts",
     "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts"
@@ -62,8 +58,6 @@
       "./extensions/context-files.ts",
       "./extensions/notify.ts",
       "./extensions/stash.ts",
-      "./extensions/workgraph.ts",
-      "./extensions/parallel.ts",
       "./extensions/structured-compaction/index.ts"
     ]
   }

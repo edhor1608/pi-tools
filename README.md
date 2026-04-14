@@ -2,14 +2,12 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships eight separate extensions that improve Pi in different parts of the same loop:
+It ships six separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
 - `context-files` lets you disable discovered AGENTS/CLAUDE context files without renaming them
 - `notify` makes Pi feel more alive in the terminal with title updates and native notifications
 - `stash` stores full deferred prompts with controlled release modes
-- `workgraph` gives Pi a sparse issue-style planning layer instead of overloading follow-up queueing
-- `parallel` prepares eligible workgraph items into separate git worktrees
 - `structured-compaction` improves the context Pi keeps over long sessions
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
@@ -28,8 +26,6 @@ These extensions improve different parts of the same session loop:
 - context-files lets you decide which discovered context files actually reach the model
 - notify shows that something is happening while the agent is working and when it needs you again
 - stash gives the user a third message lane for prompts that should be saved now and released later
-- workgraph gives the user and agent a shared sparse planning model for parked later work and dependencies
-- parallel turns eligible workgraph items into prepared git worktrees without changing Pi core
 - structured compaction helps Pi carry long-running work forward with less loss of context
 
 ## Why These Extensions Belong Together
@@ -41,8 +37,6 @@ One shows whether the current branch is still healthy.
 One lets you disable inherited context files without renaming them.
 One makes the terminal itself better at reflecting agent state.
 One gives the user a deferred-prompt stash.
-One gives the user and agent a sparse workgraph for parked later work.
-One prepares truly parallel work into separate git worktrees.
 One preserves context after a session gets long.
 
 That makes this package useful as a complete setup:
@@ -51,11 +45,9 @@ That makes this package useful as a complete setup:
 - better visibility into whether Pi is actively working or waiting on you
 - control over which inherited context files actually count
 - a clean way to save future prompts without queueing them too early
-- better control over sparse issue-style planning and parked later work
-- a starting point for real parallel git-worktree execution
 - better continuity later in the same session
 - one package source
-- eight separately manageable extensions
+- six separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -220,68 +212,6 @@ Shortcuts:
 
 In short: this is the right home for "save this next prompt for later".
 
-## Extension 7: Workgraph
-
-This extension is not a basic todo list.
-It is a sparse issue-style planning layer for later work that benefits from structure instead of a raw deferred prompt.
-
-Why that is nice:
-- the user can park later structured work without auto-sending it to the agent
-- blocked current work stays blocked instead of being silently replaced by the next queued request
-- the agent and user can share the same graph state
-- dependencies between items can be modeled with `dependTo`
-- each item can be marked `local` or `parallel`
-- explicit merge items can be represented directly in the graph
-
-Workgraph model:
-- item states: `active`, `pending`, `blocked`, `done`, `cancelled`
-- execution modes: `local`, `parallel`
-- item kinds: `work`, `merge`
-- hybrid activation: do not use the workgraph for trivial one-step work, but allow it to appear naturally when work becomes multi-step or blocked
-- keep it sparse: prefer one broad active issue and a few parked later issues instead of implementation-step subtasks
-
-User-facing commands:
-- `/graph` opens the editable workgraph UI
-- `/item add [local|parallel] <text>` parks a new work item
-- `/item merge <text>` adds an explicit merge item
-- `/item activate <id>`
-- `/item block <id> [reason]`
-- `/item done <id>`
-- `/item cancel <id>`
-- `/item edit <id> <text>`
-- `/item depend <id> <depIds>`
-- `/item execution <id> <local|parallel>`
-- `/item kind <id> <work|merge>`
-- `/item move <id> <up|down>`
-- `/item clear-resolved`
-
-Agent-facing behavior:
-- the `workgraph` tool is available to the model
-- the system prompt explains the sparse issue-style model and when not to use it
-- the current graph state is appended to the system prompt when a graph exists
-
-In short: this is a better home for "next, but not yet" than the normal follow-up queue.
-
-## Extension 8: Parallel
-
-This extension is the first execution layer on top of the workgraph.
-It does not run background workers yet. Instead, it prepares eligible `parallel` items into real git worktrees and stores the handoff metadata back on the graph item.
-
-Why that is nice:
-- truly independent work gets its own clean filesystem and branch instead of sharing one working tree
-- the graph can stay the source of truth while execution details live on the item itself
-- explicit merge items stay explicit; nothing gets merged automatically behind the user's back
-- it is a good preparation step for a later real parallel executor
-
-Current behavior:
-- `/parallel prepare` prepares every ready parallel item with resolved dependencies
-- `/parallel prepare <id>` prepares one specific parallel item
-- `/parallel list` shows prepared worktrees
-- `/parallel prompt <id>` shows the prepared worker prompt for a specific item
-- preparation currently requires a clean git working tree because new worktrees branch from `HEAD`
-
-In short: it is real git-worktree preparation now, with room for a true executor later.
-
 ## Install This Package
 
 ### Install from git
@@ -304,14 +234,12 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes eight separate extension resources:
+This package exposes six separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
 - `extensions/context-files.ts`
 - `extensions/notify.ts`
 - `extensions/stash.ts`
-- `extensions/workgraph.ts`
-- `extensions/parallel.ts`
 - `extensions/structured-compaction/index.ts`
 
 So users install one package, but can still enable or disable the parts independently in `pi config`.
@@ -333,21 +261,17 @@ Extensions:
 - `notify`
 - `structured-compaction`
 
-### Planning
+### Deferred prompts
 
-Adds the two "later, but not yet" layers:
-- `stash` for full deferred prompts
-- `workgraph` for sparse structured planning
-
-This is a good fit if you like Pi's normal flow but want better handling for future prompts and parked work.
+Adds `stash` if you want a full-prompt parking lane for "later, but not yet" messages.
 
 ### Full
 
-Enable everything, including `parallel`, if you also want worktree preparation for eligible graph items.
+Enable everything if you also want stash-based deferred prompts in addition to the core context features.
 
 ## Example Package Filtering
 
-This is a good starting point if you want the core context setup but want `stash`, `workgraph`, and `parallel` off by default:
+This is a good starting point if you want the core context setup but want `stash` off by default:
 
 ```json
 {
@@ -360,16 +284,14 @@ This is a good starting point if you want the core context setup but want `stash
         "+extensions/context-files.ts",
         "+extensions/notify.ts",
         "+extensions/structured-compaction/index.ts",
-        "-extensions/stash.ts",
-        "-extensions/workgraph.ts",
-        "-extensions/parallel.ts"
+        "-extensions/stash.ts"
       ]
     }
   ]
 }
 ```
 
-If you later want the planning layer too, add these back in `pi config` or remove the exclusions.
+If you later want deferred-prompt stash too, add it back in `pi config` or remove the exclusion.
 
 ## First Run Behavior
 
@@ -446,18 +368,6 @@ Use stash when you have a full prompt in mind that should wait until later:
 ```text
 /stash add draft Write the changelog after the current task is fully done
 /stash add send After that, review the release notes too
-```
-
-### Workgraph and parallel
-
-Use the workgraph when later work benefits from structure instead of a raw deferred prompt:
-
-```text
-/graph
-/item add parallel build the formatter in a separate worktree
-/item merge merge formatter branch back after review
-/item depend 3 2
-/parallel prepare
 ```
 
 ### Structured compaction
