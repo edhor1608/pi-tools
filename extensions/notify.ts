@@ -2,10 +2,11 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { classifyAgentEndState, type AgentEndClassification } from "./shared/agent-end-state.ts";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-type NotifyKind = "ready" | "question" | "error" | "queued";
+type NotifyKind = "ready" | "question" | "error" | "queued" | "stopped";
 
 interface NotifyOutcome {
 	kind: NotifyKind;
@@ -68,96 +69,49 @@ function getBaseTitle(pi: ExtensionAPI): string {
 	return session ? `π - ${session} - ${cwd}` : `π - ${cwd}`;
 }
 
-function getAssistantText(message: AgentMessage): string {
-	if (message.role !== "assistant") return "";
-	const content = (message as { content?: unknown }).content;
-	if (typeof content === "string") return normalizeText(content);
-	if (!Array.isArray(content)) return "";
-	return normalizeText(
-		content
-			.filter((block): block is { type: "text"; text: string } => {
-				if (typeof block !== "object" || block === null) return false;
-				return "type" in block && block.type === "text" && "text" in block && typeof block.text === "string";
-			})
-			.map((block) => block.text)
-			.join("\n"),
-	);
-}
-
-function findQuestionLine(text: string): string | undefined {
-	const lines = text
-		.split(/\r?\n/)
-		.map((line) => normalizeText(line))
-		.filter((line) => line.length > 0)
-		.filter((line) => !line.startsWith("```"));
-	const directQuestion = lines.find((line) => /\?$/.test(line));
-	if (directQuestion) return directQuestion;
-	return lines.find((line) =>
-		/(do you want|would you like|should i|should we|can you|could you|please confirm|let me know|which option|which one|what should|how should)/i.test(
-			line,
-		),
-	);
-}
-
-export function classifyAgentEnd(messages: AgentMessage[]): NotifyOutcome {
-	const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-	if (!lastAssistant) {
-		return {
-			kind: "ready",
-			title: "Pi ready",
-			body: "Ready for input",
-			titlePrefix: "✓",
-		};
-	}
-
-	const stopReason = typeof (lastAssistant as { stopReason?: unknown }).stopReason === "string"
-		? (lastAssistant as { stopReason: string }).stopReason
-		: undefined;
-	const errorMessage = typeof (lastAssistant as { errorMessage?: unknown }).errorMessage === "string"
-		? normalizeText((lastAssistant as { errorMessage: string }).errorMessage)
-		: "";
-	if (errorMessage) {
-		return {
-			kind: "error",
-			title: "Pi error",
-			body: summarizeText(errorMessage),
-			titlePrefix: "⚠",
-		};
-	}
-	if (stopReason && stopReason !== "stop" && stopReason !== "toolUse") {
-		if (stopReason === "aborted") {
-			return {
-				kind: "ready",
-				title: "Pi stopped",
-				body: "Stopped",
-				titlePrefix: "■",
-			};
-		}
-		return {
-			kind: "error",
-			title: "Pi error",
-			body: `Stopped: ${stopReason}`,
-			titlePrefix: "⚠",
-		};
-	}
-
-	const text = getAssistantText(lastAssistant);
-	const question = findQuestionLine(text);
-	if (question) {
+function toNotifyOutcome(classification: AgentEndClassification): NotifyOutcome {
+	if (classification.kind === "question") {
 		return {
 			kind: "question",
 			title: "Pi needs input",
-			body: summarizeText(question),
+			body: classification.summary,
 			titlePrefix: "❓",
 		};
 	}
-
+	if (classification.kind === "error") {
+		return {
+			kind: "error",
+			title: "Pi error",
+			body: classification.summary,
+			titlePrefix: "⚠",
+		};
+	}
+	if (classification.kind === "queued") {
+		return {
+			kind: "queued",
+			title: "Pi queued",
+			body: classification.summary,
+			titlePrefix: "↻",
+		};
+		}
+	if (classification.kind === "stopped") {
+		return {
+			kind: "stopped",
+			title: "Pi stopped",
+			body: classification.summary,
+			titlePrefix: "■",
+		};
+	}
 	return {
 		kind: "ready",
 		title: "Pi ready",
-		body: "Ready for input",
+		body: classification.summary,
 		titlePrefix: "✓",
 	};
+}
+
+export function classifyAgentEnd(messages: AgentMessage[], hasPendingMessages = false): NotifyOutcome {
+	return toNotifyOutcome(classifyAgentEndState(messages, { hasPendingMessages }));
 }
 
 function stopAnimation(ctx: ExtensionContext, pi: ExtensionAPI, prefix?: string) {
@@ -197,19 +151,9 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	pi.on("agent_end", async (event, ctx) => {
 		stopTimer();
 		if (!ctx.hasUI) return;
-		if (ctx.hasPendingMessages()) {
-			const queued: NotifyOutcome = {
-				kind: "queued",
-				title: "Pi queued",
-				body: "More queued messages are waiting",
-				titlePrefix: "↻",
-			};
-			stopAnimation(ctx, pi, queued.titlePrefix);
-			return;
-		}
-		const outcome = classifyAgentEnd(event.messages);
+		const outcome = classifyAgentEnd(event.messages, ctx.hasPendingMessages());
 		stopAnimation(ctx, pi, outcome.titlePrefix);
-		if (outcome.kind === "ready" && outcome.body === "Stopped") return;
+		if (outcome.kind === "queued" || outcome.kind === "stopped") return;
 		sendTerminalNotification(outcome.title, outcome.body);
 	});
 

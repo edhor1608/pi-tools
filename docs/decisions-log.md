@@ -220,3 +220,65 @@ This keeps the implementation small and Pi-native while making the terminal expe
 
 ### Consequences
 `pi-tools` now has a fifth extension that improves terminal ergonomics and agent-state visibility without modifying Pi core.
+
+## 2026-04-13 Workgraph Refactor
+
+### Context
+The original `workflow-todos` concept was useful, but the intended semantics had drifted away from a literal todo list. The real goal was a sparse issue-style planning layer: later work can be parked without queueing it to the model, and dependencies can be captured without turning the list into a step-by-step checklist.
+
+### Decision
+Refactor the workflow layer into a new `workgraph` extension that:
+- keeps the same core states: `active`, `pending`, `blocked`, `done`, `cancelled`
+- keeps dependency links through `dependTo`
+- adds execution metadata per item: `local` or `parallel`
+- adds item kinds: `work` and `merge`
+- keeps the editable custom UI, but renames the surface to `/graph` and `/item ...`
+- reads old `workflow-todos-state` entries so existing sessions still reconstruct, but persists new `workgraph-state` entries going forward
+- updates the system prompt guidance to prefer sparse issue-style graphs instead of implementation-step subtasks
+
+### Rationale
+This keeps the lightweight, Pi-native workflow feel while making the concept match the actual intended use. The graph becomes a place to preserve structure and avoid drift, not a second-by-second task manager.
+
+### Consequences
+`pi-tools` now has a dedicated planning layer named for what it actually is. Existing workflow state can still be read, but the package surface now pushes users and the model toward sparse workgraph usage.
+
+## 2026-04-13 Parallel Worktree Preparation
+
+### Context
+The next desired step was not full automatic parallel execution yet, but a clean way to prepare truly independent work in isolated git worktrees so the graph could evolve toward a real executor later.
+
+### Decision
+Add a separate `parallel` extension that:
+- inspects the current `workgraph`
+- prepares eligible `parallel` items into real git worktrees on dedicated branches
+- stores the resulting `repoRoot`, `worktreePath`, `branchName`, and worker prompt back on the graph item
+- exposes `/parallel prepare`, `/parallel list`, and `/parallel prompt <id>`
+- keeps merges explicit as separate `merge` items rather than auto-merging work behind the user's back
+- requires a clean working tree for preparation, because new worktrees branch from `HEAD`
+
+### Rationale
+This gives the package a real execution-oriented second layer without overcommitting to a subprocess model too early. It proves the graph/worktree/handoff flow end-to-end while keeping the future executor design open.
+
+### Consequences
+`pi-tools` now has six extensions total, and the planning layer is paired with a scaffold-only parallel preparation layer that can later grow into a real executor.
+
+## 2026-04-14 Stash Extension
+
+### Context
+The original workflow pain point was not always a structured graph item. Sometimes the user simply had a full future prompt in mind and needed a place to save it without turning it into a steering message or a queued follow-up. That needed a separate primitive from both the follow-up queue and the workgraph.
+
+### Decision
+Add a separate `stash` extension that:
+- stores full deferred prompts as custom session state instead of chat messages
+- keeps stashed prompts entirely out of model context while they are waiting
+- supports three release modes per item: `manual`, `draft`, `send`
+- uses strict FIFO ordering by default, while still allowing manual reordering and editing
+- auto-releases only from `agent_end` and only when a shared extension-side classifier says the agent ended in a true `ready` state
+- blocks auto-release on `question`, `error`, `queued`, or `stopped` endings
+- uses shortcuts for the common flow: stash current editor text or open the stash UI
+
+### Rationale
+This preserves the original idea as its own first-class interaction model instead of stretching the workgraph to cover a different problem. It also keeps the feature smooth and non-invasive: no system-prompt pollution, no hidden model calls, and no extra runtime dependency extension.
+
+### Consequences
+`pi-tools` now has seven extensions total. The package now covers both structured later work (`workgraph`) and raw deferred future prompts (`stash`) as separate concepts.

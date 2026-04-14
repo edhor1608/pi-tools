@@ -2,11 +2,13 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships five separate extensions that improve Pi in different parts of the same loop:
+It ships seven separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
 - `notify` makes Pi feel more alive in the terminal with title updates and native notifications
-- `workflow-todos` gives Pi a parked-next-work workflow instead of overloading follow-up queueing
+- `stash` stores full deferred prompts with controlled release modes
+- `workgraph` gives Pi a sparse issue-style planning layer instead of overloading follow-up queueing
+- `parallel` prepares eligible workgraph items into separate git worktrees
 - `structured-compaction` improves the context Pi keeps over long sessions
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
@@ -23,7 +25,9 @@ These extensions improve different parts of the same session loop:
 - model-specific prompt fragments help Pi speak to each model in a way that fits that model better
 - context health shows whether the current branch is still healthy
 - notify shows that something is happening while the agent is working and when it needs you again
-- workflow todos give the user and agent a shared parked-next-work model
+- stash gives the user a third message lane for prompts that should be saved now and released later
+- workgraph gives the user and agent a shared sparse planning model for parked later work and dependencies
+- parallel turns eligible workgraph items into prepared git worktrees without changing Pi core
 - structured compaction helps Pi carry long-running work forward with less loss of context
 
 ## Why These Extensions Belong Together
@@ -33,17 +37,21 @@ They are all context-quality tools.
 One shapes context before a request is sent.
 One shows whether the current branch is still healthy.
 One makes the terminal itself better at reflecting agent state.
-One gives the user and agent a shared workflow model for parked next work.
+One gives the user a deferred-prompt stash.
+One gives the user and agent a sparse workgraph for parked later work.
+One prepares truly parallel work into separate git worktrees.
 One preserves context after a session gets long.
 
 That makes this package useful as a complete setup:
 - better behavior at the start of a session
 - better visibility into whether the current branch is still healthy
 - better visibility into whether Pi is actively working or waiting on you
-- better control over multi-step and blocked work
+- a clean way to save future prompts without queueing them too early
+- better control over sparse issue-style planning and parked later work
+- a starting point for real parallel git-worktree execution
 - better continuity later in the same session
 - one package source
-- five separately manageable extensions
+- seven separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -155,42 +163,101 @@ Current behavior:
 
 In short: Pi feels less silent and easier to monitor from the terminal.
 
-## Extension 5: Workflow Todos
+## Extension 5: Stash
 
-This extension is not a basic todo list.
-It is a workflow system for the specific problem where the user wants to save the next thing out of their head without turning it into a queued follow-up message too early.
+This extension adds a third message lane.
+It is not a steering message and not a follow-up queue message. It stores a full prompt for later release.
 
 Why that is nice:
-- the user can park "do this next" work without auto-sending it to the agent
-- blocked current work stays blocked instead of being silently replaced by the next queued request
-- the agent and user can share the same workflow state
-- the list is editable through a custom UI instead of being a write-only queue
-- dependencies between todos can be modeled with `dependTo`
+- you can get a future prompt out of your head without sending it too early
+- stashed prompts stay completely out of model context while they are waiting
+- release is explicit per item: `manual`, `draft`, or `send`
+- automatic release uses the same ready/question/error/queued heuristics as the notify extension, so it stays extension-side instead of polluting the system prompt
+- ordering is FIFO by default, but you can edit and reorder items
 
-Workflow model:
-- todo states: `active`, `pending`, `blocked`, `done`, `cancelled`
-- hybrid activation: do not use workflow todos for trivial one-step work, but allow them to appear naturally when work becomes multi-step or blocked
-- when another task appears for later, it can be parked as `pending`
-- when current work is blocked, it stays blocked and the next task does not auto-run
+Release modes:
+- `manual`: only release when you explicitly apply or send the item
+- `draft`: when Pi finishes cleanly and is truly ready, load the prompt into the editor and remove it from the stash
+- `send`: when Pi finishes cleanly and is truly ready, send the prompt as the next real user message and remove it from the stash
 
 User-facing commands:
-- `/todos` opens the editable workflow UI
-- `/todo add <text>` parks the next thing without queueing it as a follow-up message
-- `/todo activate <id>`
-- `/todo block <id> [reason]`
-- `/todo done <id>`
-- `/todo cancel <id>`
-- `/todo edit <id> <text>`
-- `/todo depend <id> <depIds>`
-- `/todo move <id> <up|down>`
-- `/todo clear-completed`
+- `/stash` opens the editable stash UI
+- `/stash add [manual|draft|send] <text>`
+- `/stash edit <id> <text>`
+- `/stash mode <id> <manual|draft|send>`
+- `/stash apply <id>`
+- `/stash send <id>`
+- `/stash drop <id>`
+- `/stash move <id> <up|down>`
+- `/stash list`
+
+Shortcuts:
+- `Ctrl+Alt+S` stashes the current editor text, or opens an editor if the input is empty
+- `Ctrl+Shift+S` opens the stash UI
+
+In short: this is the right home for "save this next prompt for later".
+
+## Extension 6: Workgraph
+
+This extension is not a basic todo list.
+It is a sparse issue-style planning layer for later work that benefits from structure instead of a raw deferred prompt.
+
+Why that is nice:
+- the user can park later structured work without auto-sending it to the agent
+- blocked current work stays blocked instead of being silently replaced by the next queued request
+- the agent and user can share the same graph state
+- dependencies between items can be modeled with `dependTo`
+- each item can be marked `local` or `parallel`
+- explicit merge items can be represented directly in the graph
+
+Workgraph model:
+- item states: `active`, `pending`, `blocked`, `done`, `cancelled`
+- execution modes: `local`, `parallel`
+- item kinds: `work`, `merge`
+- hybrid activation: do not use the workgraph for trivial one-step work, but allow it to appear naturally when work becomes multi-step or blocked
+- keep it sparse: prefer one broad active issue and a few parked later issues instead of implementation-step subtasks
+
+User-facing commands:
+- `/graph` opens the editable workgraph UI
+- `/item add [local|parallel] <text>` parks a new work item
+- `/item merge <text>` adds an explicit merge item
+- `/item activate <id>`
+- `/item block <id> [reason]`
+- `/item done <id>`
+- `/item cancel <id>`
+- `/item edit <id> <text>`
+- `/item depend <id> <depIds>`
+- `/item execution <id> <local|parallel>`
+- `/item kind <id> <work|merge>`
+- `/item move <id> <up|down>`
+- `/item clear-resolved`
 
 Agent-facing behavior:
-- the `workflow_todos` tool is available to the model
-- the system prompt explains when to use it and when not to use it
-- the current workflow state is appended to the system prompt when a workflow exists
+- the `workgraph` tool is available to the model
+- the system prompt explains the sparse issue-style model and when not to use it
+- the current graph state is appended to the system prompt when a graph exists
 
 In short: this is a better home for "next, but not yet" than the normal follow-up queue.
+
+## Extension 7: Parallel
+
+This extension is the first execution layer on top of the workgraph.
+It does not run background workers yet. Instead, it prepares eligible `parallel` items into real git worktrees and stores the handoff metadata back on the graph item.
+
+Why that is nice:
+- truly independent work gets its own clean filesystem and branch instead of sharing one working tree
+- the graph can stay the source of truth while execution details live on the item itself
+- explicit merge items stay explicit; nothing gets merged automatically behind the user's back
+- it is a good preparation step for a later real parallel executor
+
+Current behavior:
+- `/parallel prepare` prepares every ready parallel item with resolved dependencies
+- `/parallel prepare <id>` prepares one specific parallel item
+- `/parallel list` shows prepared worktrees
+- `/parallel prompt <id>` shows the prepared worker prompt for a specific item
+- preparation currently requires a clean git working tree because new worktrees branch from `HEAD`
+
+In short: it is real git-worktree preparation now, with room for a true executor later.
 
 ## Install This Package
 
@@ -214,11 +281,13 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes five separate extension resources:
+This package exposes seven separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
 - `extensions/notify.ts`
-- `extensions/workflow-todos.ts`
+- `extensions/stash.ts`
+- `extensions/workgraph.ts`
+- `extensions/parallel.ts`
 - `extensions/structured-compaction/index.ts`
 
 So users install one package, but can still enable or disable the parts independently in `pi config`.
@@ -283,14 +352,25 @@ What you should see:
 - a needs-input marker in the title when Pi ends by asking a question
 - a native terminal notification when Pi becomes ready or needs input
 
-### Workflow todos
+### Stash
 
-Use it as soon as you want to park later work without queueing it to the model:
+Use stash when you have a full prompt in mind that should wait until later:
 
 ```text
-/todos
-/todo add write the changelog after this blocker is resolved
-/todo block 2 waiting on user decision
+/stash add draft Write the changelog after the current task is fully done
+/stash add send After that, review the release notes too
+```
+
+### Workgraph and parallel
+
+Use the workgraph when later work benefits from structure instead of a raw deferred prompt:
+
+```text
+/graph
+/item add parallel build the formatter in a separate worktree
+/item merge merge formatter branch back after review
+/item depend 3 2
+/parallel prepare
 ```
 
 ### Structured compaction
