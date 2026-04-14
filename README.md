@@ -2,9 +2,10 @@
 
 `pi-tools` is a Pi package focused on one thing: better context.
 
-It ships seven separate extensions that improve Pi in different parts of the same loop:
+It ships eight separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
+- `context-files` lets you disable discovered AGENTS/CLAUDE context files without renaming them
 - `notify` makes Pi feel more alive in the terminal with title updates and native notifications
 - `stash` stores full deferred prompts with controlled release modes
 - `workgraph` gives Pi a sparse issue-style planning layer instead of overloading follow-up queueing
@@ -24,6 +25,7 @@ Pi already has a solid base prompt and a good default compaction system. But two
 These extensions improve different parts of the same session loop:
 - model-specific prompt fragments help Pi speak to each model in a way that fits that model better
 - context health shows whether the current branch is still healthy
+- context-files lets you decide which discovered context files actually reach the model
 - notify shows that something is happening while the agent is working and when it needs you again
 - stash gives the user a third message lane for prompts that should be saved now and released later
 - workgraph gives the user and agent a shared sparse planning model for parked later work and dependencies
@@ -36,6 +38,7 @@ They are all context-quality tools.
 
 One shapes context before a request is sent.
 One shows whether the current branch is still healthy.
+One lets you disable inherited context files without renaming them.
 One makes the terminal itself better at reflecting agent state.
 One gives the user a deferred-prompt stash.
 One gives the user and agent a sparse workgraph for parked later work.
@@ -46,12 +49,13 @@ That makes this package useful as a complete setup:
 - better behavior at the start of a session
 - better visibility into whether the current branch is still healthy
 - better visibility into whether Pi is actively working or waiting on you
+- control over which inherited context files actually count
 - a clean way to save future prompts without queueing them too early
 - better control over sparse issue-style planning and parked later work
 - a starting point for real parallel git-worktree execution
 - better continuity later in the same session
 - one package source
-- seven separately manageable extensions
+- eight separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -163,7 +167,26 @@ Current behavior:
 
 In short: Pi feels less silent and easier to monitor from the terminal.
 
-## Extension 5: Stash
+## Extension 5: Context Files
+
+Pi already discovers `AGENTS.md` and `CLAUDE.md` files automatically.
+This extension keeps that discovery model, but lets you decide which discovered files actually reach the model.
+
+Why that is nice:
+- you can disable a noisy global or parent context file without renaming it
+- control stays project-local in `.pi/context-files.json`
+- the toggle UI shows every discovered path in one place
+- the footer can show when some context files are filtered out
+
+Current behavior:
+- `/context-files` opens a toggle UI for discovered context files
+- each file can be switched between `✓ enabled` and `× disabled`
+- disabled files are removed from the final `# Project Context` section before the model sees it
+- Pi's startup `[Context]` header still reflects core discovery, because that happens before extension filtering
+
+In short: keep Pi's automatic context-file discovery, but decide which files actually count.
+
+## Extension 6: Stash
 
 This extension adds a third message lane.
 It is not a steering message and not a follow-up queue message. It stores a full prompt for later release.
@@ -197,7 +220,7 @@ Shortcuts:
 
 In short: this is the right home for "save this next prompt for later".
 
-## Extension 6: Workgraph
+## Extension 7: Workgraph
 
 This extension is not a basic todo list.
 It is a sparse issue-style planning layer for later work that benefits from structure instead of a raw deferred prompt.
@@ -239,7 +262,7 @@ Agent-facing behavior:
 
 In short: this is a better home for "next, but not yet" than the normal follow-up queue.
 
-## Extension 7: Parallel
+## Extension 8: Parallel
 
 This extension is the first execution layer on top of the workgraph.
 It does not run background workers yet. Instead, it prepares eligible `parallel` items into real git worktrees and stores the handoff metadata back on the graph item.
@@ -281,9 +304,10 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes seven separate extension resources:
+This package exposes eight separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
+- `extensions/context-files.ts`
 - `extensions/notify.ts`
 - `extensions/stash.ts`
 - `extensions/workgraph.ts`
@@ -305,6 +329,7 @@ Good default if you want better model behavior, compaction, visibility, and term
 Extensions:
 - `model-system-prompt`
 - `context-health`
+- `context-files`
 - `notify`
 - `structured-compaction`
 
@@ -332,6 +357,7 @@ This is a good starting point if you want the core context setup but want `stash
       "extensions": [
         "+extensions/model-system-prompt.ts",
         "+extensions/context-health.ts",
+        "+extensions/context-files.ts",
         "+extensions/notify.ts",
         "+extensions/structured-compaction/index.ts",
         "-extensions/stash.ts",
@@ -402,6 +428,16 @@ What you should see:
 - a ready marker in the title when Pi finishes normally
 - a needs-input marker in the title when Pi ends by asking a question
 - a native terminal notification when Pi becomes ready or needs input
+
+### Context files
+
+Use it when Pi finds the right context files, but you do not want all of them to reach the model:
+
+```text
+/context-files
+```
+
+Then toggle entries on or off in the UI. Disabled files are removed from the final prompt before the model sees it.
 
 ### Stash
 

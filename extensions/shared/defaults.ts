@@ -18,16 +18,24 @@ const copyMissingRecursive = (sourcePath: string, targetPath: string) => {
 	copyFileSync(sourcePath, targetPath);
 };
 
-export const getPackageRoot = (moduleUrl: string): string => {
+const findPackageRoot = (moduleUrl: string): string | undefined => {
 	let current = dirname(fileURLToPath(moduleUrl));
 	while (true) {
 		if (existsSync(join(current, "package.json"))) return current;
 		const parent = dirname(current);
 		if (parent === current) {
-			throw new Error(`Could not find package root for ${moduleUrl}`);
+			return undefined;
 		}
 		current = parent;
 	}
+};
+
+export const getPackageRoot = (moduleUrl: string): string => {
+	const packageRoot = findPackageRoot(moduleUrl);
+	if (!packageRoot) {
+		throw new Error(`Could not find package root for ${moduleUrl}`);
+	}
+	return packageRoot;
 };
 
 const ensuredDefaults = new Map<string, Promise<void>>();
@@ -38,8 +46,10 @@ export const ensurePackagedDefaults = (moduleUrl: string, packageRelativeSource:
 	if (existing) return existing;
 
 	const promise = (async () => {
-		const packageRoot = getPackageRoot(moduleUrl);
+		const packageRoot = findPackageRoot(moduleUrl);
+		if (!packageRoot) return;
 		const sourcePath = join(packageRoot, packageRelativeSource);
+		if (!existsSync(sourcePath)) return;
 		const lockPath = join(targetPath, ".pi-tools.defaults.lock");
 		await withFileMutationQueue(lockPath, async () => {
 			copyMissingRecursive(sourcePath, targetPath);

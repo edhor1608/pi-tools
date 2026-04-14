@@ -1,7 +1,7 @@
 {
   "name": "@stead/pi-tools",
   "version": "0.1.0",
-  "description": "Context-quality extensions for Pi: model prompts, notifications, stash prompts, workgraph planning, parallel worktree prep, context health, and structured compaction",
+  "description": "Context-quality extensions for Pi: model prompts, context-file control, notifications, stash prompts, workgraph planning, parallel worktree prep, context health, and structured compaction",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -20,6 +20,7 @@
     "pi",
     "stead",
     "context",
+    "context-files",
     "compaction",
     "system-prompt",
     "workflow",
@@ -44,7 +45,9 @@
     "analyze": "bun ./scripts/analyze-session.ts",
     "test:workgraph-lifecycle": "bun ./scripts/test-workgraph-session-lifecycle.ts",
     "test:parallel-prepare": "bun ./scripts/test-workgraph-parallel-prepare.ts",
-    "test:stash-release": "bun ./scripts/test-stash-release.ts"
+    "test:stash-release": "bun ./scripts/test-stash-release.ts",
+    "test:context-files": "bun ./scripts/test-context-files.ts",
+    "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts"
   },
   "peerDependencies": {
     "@mariozechner/pi-agent-core": "*",
@@ -56,6 +59,7 @@
     "extensions": [
       "./extensions/model-system-prompt.ts",
       "./extensions/context-health.ts",
+      "./extensions/context-files.ts",
       "./extensions/notify.ts",
       "./extensions/stash.ts",
       "./extensions/workgraph.ts",

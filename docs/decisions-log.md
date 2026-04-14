@@ -282,3 +282,22 @@ This preserves the original idea as its own first-class interaction model instea
 
 ### Consequences
 `pi-tools` now has seven extensions total. The package now covers both structured later work (`workgraph`) and raw deferred future prompts (`stash`) as separate concepts.
+
+## 2026-04-14 Context Files Extension
+
+### Context
+Pi's built-in AGENTS.md and CLAUDE.md discovery is useful, but it is all-or-nothing. In practice, some inherited context files are useful to keep on disk and visible in discovery while still being too noisy or too broad for a specific project session.
+
+### Decision
+Add a separate `context-files` extension that:
+- re-discovers the same AGENTS.md and CLAUDE.md files Pi core would load for the current cwd
+- stores a project-local disabled-path list in `.pi/context-files.json`
+- exposes `/context-files` as an interactive toggle UI
+- filters disabled files out of the final `# Project Context` section in `before_agent_start`
+- leaves Pi core discovery untouched, which means the startup context list still reflects discovery rather than extension-side filtering
+
+### Rationale
+This keeps the implementation small and extension-only while still solving the real problem: control over what actually reaches the model. Project-local persistence is the simplest default and avoids introducing global/project conflict rules in v1.
+
+### Consequences
+`pi-tools` now has eight extensions total. Users can keep Pi's normal context-file discovery and still disable specific inherited files for a given project without renaming or deleting them.
