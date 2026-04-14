@@ -294,6 +294,57 @@ So users install one package, but can still enable or disable the parts independ
 
 That keeps the surface simple without forcing every user to use every extension.
 
+Pi loads all exposed extensions by default. If you want a narrower setup, use `pi config` or package filtering in settings.
+
+## Recommended Extension Sets
+
+### Core context
+
+Good default if you want better model behavior, compaction, visibility, and terminal feedback without adding planning surfaces.
+
+Extensions:
+- `model-system-prompt`
+- `context-health`
+- `notify`
+- `structured-compaction`
+
+### Planning
+
+Adds the two "later, but not yet" layers:
+- `stash` for full deferred prompts
+- `workgraph` for sparse structured planning
+
+This is a good fit if you like Pi's normal flow but want better handling for future prompts and parked work.
+
+### Full
+
+Enable everything, including `parallel`, if you also want worktree preparation for eligible graph items.
+
+## Example Package Filtering
+
+This is a good starting point if you want the core context setup but want `stash`, `workgraph`, and `parallel` off by default:
+
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/edhor1608/pi-tools",
+      "extensions": [
+        "+extensions/model-system-prompt.ts",
+        "+extensions/context-health.ts",
+        "+extensions/notify.ts",
+        "+extensions/structured-compaction/index.ts",
+        "-extensions/stash.ts",
+        "-extensions/workgraph.ts",
+        "-extensions/parallel.ts"
+      ]
+    }
+  ]
+}
+```
+
+If you later want the planning layer too, add these back in `pi config` or remove the exclusions.
+
 ## First Run Behavior
 
 On first use, the extensions seed missing defaults into Pi's normal editable runtime paths:
