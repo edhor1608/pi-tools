@@ -12,6 +12,7 @@ const { AssistantMessageComponent } = await import(
 const { rawKeyHint } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "keybinding-hints.js")).href,
 );
+const { InteractiveMode } = await import(pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "interactive-mode.js")).href);
 
 const PATCHED = Symbol.for("stead.pi-tools.fileFootnotes.patched");
 const ASSISTANT_MARKDOWN = Symbol.for("stead.pi-tools.fileFootnotes.assistantMarkdown");
@@ -261,6 +262,15 @@ const patchAssistantMessageRendering = () => {
 	if (globalScope[PATCHED]) return;
 	globalScope[PATCHED] = true;
 
+	const originalCreateExtensionUIContext = InteractiveMode.prototype.createExtensionUIContext;
+	InteractiveMode.prototype.createExtensionUIContext = function () {
+		const uiContext = originalCreateExtensionUIContext.call(this) as Record<string, unknown>;
+		uiContext.fullRedraw = () => {
+			this.ui.requestRender(true);
+		};
+		return uiContext;
+	};
+
 	const originalUpdateContent = AssistantMessageComponent.prototype.updateContent;
 	AssistantMessageComponent.prototype.updateContent = function (message: any) {
 		originalUpdateContent.call(this, message);
@@ -406,6 +416,7 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 		handler: (ctx) => {
 			const expanded = toggleFileFootnotesExpanded();
 			ctx.ui.notify(`File footnotes ${expanded ? "expanded" : "collapsed"}`, "info");
+			(ctx.ui as { fullRedraw?: () => void }).fullRedraw?.();
 		},
 	});
 }
