@@ -1,27 +1,49 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import { Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
 const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
 const { AssistantMessageComponent } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,
 );
+const { rawKeyHint } = await import(
+	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "keybinding-hints.js")).href,
+);
 
 const PATCHED = Symbol.for("stead.pi-tools.fileFootnotes.patched");
 const ASSISTANT_MARKDOWN = Symbol.for("stead.pi-tools.fileFootnotes.assistantMarkdown");
 const FOOTNOTE_STATE = Symbol.for("stead.pi-tools.fileFootnotes.state");
 const PATCHED_CACHE = Symbol.for("stead.pi-tools.fileFootnotes.cache");
+const FOOTNOTE_VISIBILITY = Symbol.for("stead.pi-tools.fileFootnotes.visibility");
+const FOOTNOTE_TOGGLE_SHORTCUT = Key.ctrlShift("o");
+
+export const FILE_FOOTNOTES_TOGGLE_SHORTCUT = FOOTNOTE_TOGGLE_SHORTCUT;
 
 interface FileFootnoteItem {
 	index: number;
 	href: string;
+	displayHref: string;
+	openUrl?: string;
+	vscodeUrl?: string;
 }
 
 interface FileFootnoteState {
 	items: FileFootnoteItem[];
-	indexByHref: Map<string, number>;
+	itemByHref: Map<string, FileFootnoteItem>;
+}
+
+interface FootnoteVisibilityState {
+	expanded: boolean;
+}
+
+interface ParsedFileTarget {
+	displayHref: string;
+	filesystemPath?: string;
+	line?: number;
+	column?: number;
 }
 
 interface MarkdownWithFootnotes extends Markdown {
@@ -31,6 +53,7 @@ interface MarkdownWithFootnotes extends Markdown {
 		text: string;
 		width: number;
 		lines: string[];
+		expanded: boolean;
 	};
 	cachedText?: string;
 	cachedWidth?: number;
@@ -60,45 +83,145 @@ const isFileHref = (href: string): boolean => {
 	return isAbsoluteWindowsPath(href);
 };
 
-const splitLocationSuffix = (href: string): { pathPart: string; suffix: string } => {
-	if (href.startsWith("file://")) {
-		try {
-			const url = new URL(href);
-			const pathPart = url.pathname || href;
-			const suffix = url.hash || "";
-			return { pathPart, suffix };
-		} catch {
-			return { pathPart: href, suffix: "" };
-		}
-	}
-	const hashIndex = href.lastIndexOf("#L");
-	if (hashIndex !== -1) {
-		return { pathPart: href.slice(0, hashIndex), suffix: href.slice(hashIndex) };
+const getFootnoteVisibilityState = (): FootnoteVisibilityState => {
+	const globalScope = globalThis as Record<PropertyKey, unknown>;
+	const existing = globalScope[FOOTNOTE_VISIBILITY] as FootnoteVisibilityState | undefined;
+	if (existing) return existing;
+	const created: FootnoteVisibilityState = { expanded: false };
+	globalScope[FOOTNOTE_VISIBILITY] = created;
+	return created;
+};
+
+export const getFileFootnotesExpanded = (): boolean => getFootnoteVisibilityState().expanded;
+
+export const setFileFootnotesExpanded = (expanded: boolean): boolean => {
+	getFootnoteVisibilityState().expanded = expanded;
+	return expanded;
+};
+
+export const toggleFileFootnotesExpanded = (): boolean => {
+	const visibility = getFootnoteVisibilityState();
+	visibility.expanded = !visibility.expanded;
+	return visibility.expanded;
+};
+
+const parseHashLocation = (hash: string): { line?: number; column?: number } => {
+	const match = /^#L(\d+)(?:C(\d+))?$/.exec(hash);
+	if (!match) return {};
+	const line = Number(match[1]);
+	const column = match[2] ? Number(match[2]) : undefined;
+	return {
+		line: Number.isFinite(line) ? line : undefined,
+		column: column !== undefined && Number.isFinite(column) ? column : undefined,
+	};
+};
+
+const splitPathLocationSuffix = (href: string): { pathPart: string; suffix: string; line?: number; column?: number } => {
+	const hashMatch = /#L(\d+)(?:C(\d+))?$/.exec(href);
+	if (hashMatch && hashMatch.index >= 0) {
+		const line = Number(hashMatch[1]);
+		const column = hashMatch[2] ? Number(hashMatch[2]) : undefined;
+		return {
+			pathPart: href.slice(0, hashMatch.index),
+			suffix: hashMatch[0],
+			line: Number.isFinite(line) ? line : undefined,
+			column: column !== undefined && Number.isFinite(column) ? column : undefined,
+		};
 	}
 	const lastSlash = Math.max(href.lastIndexOf("/"), href.lastIndexOf("\\"));
-	const lastColon = href.lastIndexOf(":");
-	if (lastColon > lastSlash && /^:\d+(?::\d+)?$/.test(href.slice(lastColon))) {
-		return { pathPart: href.slice(0, lastColon), suffix: href.slice(lastColon) };
+	const colonMatch = /:(\d+)(?::(\d+))?$/.exec(href);
+	if (colonMatch && colonMatch.index > lastSlash) {
+		const line = Number(colonMatch[1]);
+		const column = colonMatch[2] ? Number(colonMatch[2]) : undefined;
+		return {
+			pathPart: href.slice(0, colonMatch.index),
+			suffix: colonMatch[0],
+			line: Number.isFinite(line) ? line : undefined,
+			column: column !== undefined && Number.isFinite(column) ? column : undefined,
+		};
 	}
 	return { pathPart: href, suffix: "" };
 };
 
-const deriveInlineLabel = (href: string): string => {
-	const { pathPart, suffix } = splitLocationSuffix(href);
-	const slashIndex = Math.max(pathPart.lastIndexOf("/"), pathPart.lastIndexOf("\\"));
-	const base = slashIndex === -1 ? pathPart : pathPart.slice(slashIndex + 1);
-	return `${base || pathPart}${suffix}`;
+const normalizeFilesystemPath = (pathPart: string): string | undefined => {
+	if (pathPart.startsWith("~/")) return join(homedir(), pathPart.slice(2));
+	if (pathPart.startsWith("/")) return pathPart;
+	if (isAbsoluteWindowsPath(pathPart)) return pathPart;
+	return undefined;
 };
 
-const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): number => {
+const parseFileTarget = (href: string): ParsedFileTarget => {
+	if (href.startsWith("file://")) {
+		try {
+			const url = new URL(href);
+			const filesystemPath = fileURLToPath(url);
+			const { line, column } = parseHashLocation(url.hash || "");
+			return {
+				displayHref: `${filesystemPath}${url.hash || ""}`,
+				filesystemPath,
+				line,
+				column,
+			};
+		} catch {
+			return { displayHref: href };
+		}
+	}
+	const { pathPart, suffix, line, column } = splitPathLocationSuffix(href);
+	return {
+		displayHref: `${pathPart}${suffix}`,
+		filesystemPath: normalizeFilesystemPath(pathPart),
+		line,
+		column,
+	};
+};
+
+const buildDefaultOpenUrl = (target: ParsedFileTarget): string | undefined => {
+	if (!target.filesystemPath) return undefined;
+	return pathToFileURL(target.filesystemPath).href;
+};
+
+const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
+	if (!target.filesystemPath) return undefined;
+	const baseUrl = pathToFileURL(target.filesystemPath).href.replace(/^file:\/\//, "vscode://file");
+	if (!target.line) return baseUrl;
+	if (!target.column) return `${baseUrl}:${target.line}`;
+	return `${baseUrl}:${target.line}:${target.column}`;
+};
+
+const formatHyperlink = (url: string | undefined, label: string): string => {
+	if (!url) return label;
+	return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
+};
+
+const deriveInlineLabel = (href: string): string => {
+	const target = parseFileTarget(href);
+	const slashIndex = Math.max(target.displayHref.lastIndexOf("/"), target.displayHref.lastIndexOf("\\"));
+	const base = slashIndex === -1 ? target.displayHref : target.displayHref.slice(slashIndex + 1);
+	return base || target.displayHref;
+};
+
+const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFootnoteItem | undefined => {
 	const state = markdown[FOOTNOTE_STATE];
-	if (!state) return 0;
-	const existing = state.indexByHref.get(href);
+	if (!state) return undefined;
+	const existing = state.itemByHref.get(href);
 	if (existing) return existing;
-	const index = state.items.length + 1;
-	state.items.push({ index, href });
-	state.indexByHref.set(href, index);
-	return index;
+	const target = parseFileTarget(href);
+	const item: FileFootnoteItem = {
+		index: state.items.length + 1,
+		href,
+		displayHref: target.displayHref,
+		openUrl: buildDefaultOpenUrl(target),
+		vscodeUrl: buildVsCodeUrl(target),
+	};
+	state.items.push(item);
+	state.itemByHref.set(href, item);
+	return item;
+};
+
+const buildFootnoteHeaderLine = (expanded: boolean, itemCount: number): string => {
+	if (expanded) return `${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to hide file footnotes")}`;
+	const noun = itemCount === 1 ? "reference" : "references";
+	return `${itemCount} file ${noun} hidden ${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to show")}`;
 };
 
 const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, items: FileFootnoteItem[]): string[] => {
@@ -106,9 +229,16 @@ const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, item
 	const contentWidth = Math.max(1, width - markdown.paddingX * 2);
 	const leftMargin = " ".repeat(markdown.paddingX);
 	const rightMargin = " ".repeat(markdown.paddingX);
-	const rawLines = [""];
-	for (const item of items) {
-		rawLines.push(`${markdown.theme.linkUrl(`[${item.index}] `)}${markdown.theme.link(markdown.theme.underline(item.href))}`);
+	const expanded = getFileFootnotesExpanded();
+	const rawLines = ["", markdown.theme.linkUrl(buildFootnoteHeaderLine(expanded, items.length))];
+	if (expanded) {
+		for (const item of items) {
+			let line = `${markdown.theme.linkUrl(`[${item.index}] `)}${formatHyperlink(item.openUrl, markdown.theme.link(markdown.theme.underline(item.displayHref)))}`;
+			if (item.vscodeUrl) {
+				line += ` ${formatHyperlink(item.vscodeUrl, markdown.theme.link(markdown.theme.underline("VS Code")))}`;
+			}
+			rawLines.push(line);
+		}
 	}
 	const rendered: string[] = [];
 	for (const rawLine of rawLines) {
@@ -199,11 +329,11 @@ const patchAssistantMessageRendering = () => {
 						token.text === token.href || token.text === hrefForComparison || visibleLinkText.length === 0
 							? deriveInlineLabel(token.href)
 							: linkText;
-					const footnoteIndex = registerFootnote(markdown, token.href);
-					result +=
-						this.theme.link(this.theme.underline(inlineLabel)) +
-						this.theme.linkUrl(`[${footnoteIndex}]`) +
-						stylePrefix;
+					const footnoteItem = registerFootnote(markdown, token.href);
+					const inlineLink = footnoteItem
+						? formatHyperlink(footnoteItem.openUrl, this.theme.link(this.theme.underline(inlineLabel)))
+						: this.theme.link(this.theme.underline(inlineLabel));
+					result += inlineLink + this.theme.linkUrl(`[${footnoteItem?.index ?? 0}]`) + stylePrefix;
 					break;
 				}
 				case "br":
@@ -233,8 +363,9 @@ const patchAssistantMessageRendering = () => {
 		if (!markdown[ASSISTANT_MARKDOWN] || markdown.defaultTextStyle?.bgColor) {
 			return originalRender.call(this, width);
 		}
+		const expanded = getFileFootnotesExpanded();
 		const cached = markdown[PATCHED_CACHE];
-		if (cached && cached.text === this.text && cached.width === width) {
+		if (cached && cached.text === this.text && cached.width === width && cached.expanded === expanded) {
 			return cached.lines;
 		}
 		const previousCachedText = markdown.cachedText;
@@ -245,7 +376,7 @@ const patchAssistantMessageRendering = () => {
 		markdown.cachedLines = undefined;
 		markdown[FOOTNOTE_STATE] = {
 			items: [],
-			indexByHref: new Map<string, number>(),
+			itemByHref: new Map<string, FileFootnoteItem>(),
 		};
 		try {
 			const lines = originalRender.call(this, width) as string[];
@@ -255,6 +386,7 @@ const patchAssistantMessageRendering = () => {
 				text: this.text,
 				width,
 				lines: rendered,
+				expanded,
 			};
 			return rendered;
 		} finally {
@@ -266,6 +398,14 @@ const patchAssistantMessageRendering = () => {
 	};
 };
 
-export default function fileFootnotesExtension(_pi: ExtensionAPI) {
+export default function fileFootnotesExtension(pi: ExtensionAPI) {
+	setFileFootnotesExpanded(false);
 	patchAssistantMessageRendering();
+	pi.registerShortcut?.(FOOTNOTE_TOGGLE_SHORTCUT, {
+		description: "Collapse or expand file footnotes",
+		handler: (ctx) => {
+			const expanded = toggleFileFootnotesExpanded();
+			ctx.ui.notify(`File footnotes ${expanded ? "expanded" : "collapsed"}`, "info");
+		},
+	});
 }

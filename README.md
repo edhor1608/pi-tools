@@ -196,7 +196,9 @@ Why that is nice:
 
 Current behavior:
 - assistant file links render inline as `label[1]`, `label[2]`, and so on
-- numbered file references are listed under the same assistant message
+- the inline file label stays directly clickable for normal file or path opening
+- the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
+- expanded footnotes show the full file target plus a `VS Code` open link for files and directories
 - web links and other non-file links keep Pi's normal inline style
 
 Implementation note: this is an internal render patch against Pi's assistant markdown component, so it may need adjustment when Pi changes its internal message renderer.
@@ -385,7 +387,9 @@ It works automatically once enabled. There is no command to remember.
 
 What you should see:
 - file links in assistant answers stay inline as short labels
-- the full file targets move into numbered footnotes under the same message
+- the inline file label still opens the file or path directly in terminals that support hyperlinks
+- the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
+- expanded footnotes show the full target plus a `VS Code` open link
 - normal web links still render the way Pi normally renders them
 
 ### Context files
