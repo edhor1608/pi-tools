@@ -4,6 +4,7 @@ import { Box, Text } from "@mariozechner/pi-tui";
 
 const STATUS_KEY = "context-health";
 const CUSTOM_TYPE = "context-health";
+const PROVIDER_DEBUG_ENV = "PI_TOOLS_CONTEXT_HEALTH_PROVIDER_DEBUG";
 const ROLLING_CACHE_WINDOW = 8;
 const PLAN_MONTHLY_PRICE_USD: Record<string, number | undefined> = {
 	plus: 20,
@@ -63,6 +64,12 @@ interface ContextHealthMessageDetails {
 	snapshot: ContextHealthSnapshot;
 }
 
+interface ProviderResponseSnapshot {
+	status: number;
+	timestamp: number;
+	headers: Record<string, string>;
+}
+
 const formatNumber = (value: number): string => value.toLocaleString("en-US");
 const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 const formatCompactPercent = (value: number): string => (value < 10 ? `${value.toFixed(1)}%` : `${Math.round(value)}%`);
@@ -73,6 +80,40 @@ const formatTokenCount = (count: number): string => {
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
 	return `${Math.round(count / 1000000)}M`;
+};
+
+const PROVIDER_HEADER_PATTERNS = [
+	/^retry-after$/i,
+	/^x-request-id$/i,
+	/^x-ratelimit-/i,
+	/^openai-processing-ms$/i,
+	/^anthropic-ratelimit-/i,
+	/^cf-ray$/i,
+	/^via$/i,
+	/^server$/i,
+] as const;
+
+const isProviderResponseDebugEnabled = (): boolean => process.env[PROVIDER_DEBUG_ENV] === "1";
+
+const captureProviderResponse = (status: number, headers: Record<string, string>): ProviderResponseSnapshot => ({
+	status,
+	timestamp: Date.now(),
+	headers: Object.fromEntries(
+		Object.entries(headers)
+			.filter(([name, value]) => value.length > 0 && PROVIDER_HEADER_PATTERNS.some((pattern) => pattern.test(name)))
+			.sort(([left], [right]) => left.localeCompare(right))
+			.slice(0, 12),
+	),
+});
+
+const buildProviderResponseDetails = (providerResponse: ProviderResponseSnapshot): string[] => {
+	const headerEntries = Object.entries(providerResponse.headers);
+	return [
+		"Provider Response Debug",
+		`- last provider status: ${providerResponse.status}`,
+		`- last provider response at: ${new Date(providerResponse.timestamp).toISOString()}`,
+		`- last provider headers: ${headerEntries.length > 0 ? headerEntries.map(([name, value]) => `${name}=${value}`).join(", ") : "no interesting headers captured"}`,
+	];
 };
 
 const decodeJwtPayload = (token: string): Record<string, unknown> | undefined => {
@@ -271,7 +312,7 @@ const buildPreview = (snapshot: ContextHealthSnapshot): string =>
 		`- rot: ${snapshot.rot.label} (${snapshot.rot.score}/100)`,
 	].join("\n");
 
-const buildDetails = (snapshot: ContextHealthSnapshot): string => {
+const buildDetails = (snapshot: ContextHealthSnapshot, providerResponse?: ProviderResponseSnapshot): string => {
 	const lines = [
 		"Context Health",
 		`- subscription: ${snapshot.subscription.label}`,
@@ -291,6 +332,9 @@ const buildDetails = (snapshot: ContextHealthSnapshot): string => {
 	}
 	lines.push(`- turns since compaction: ${formatNumber(snapshot.rot.assistantTurnsSinceCompaction)}`);
 	lines.push(`- uncached input since compaction: ${formatNumber(snapshot.rot.uncachedInputSinceCompaction)} tokens`);
+	if (providerResponse) {
+		lines.push("", ...buildProviderResponseDetails(providerResponse));
+	}
 	return lines.join("\n");
 };
 
@@ -300,6 +344,8 @@ const updateStatus = (ctx: ExtensionContext) => {
 };
 
 export default function contextHealthExtension(pi: ExtensionAPI) {
+	let lastProviderResponse: ProviderResponseSnapshot | undefined;
+
 	pi.registerMessageRenderer(CUSTOM_TYPE, (message, options, theme) => {
 		const details = message.details as ContextHealthMessageDetails | undefined;
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
@@ -310,13 +356,18 @@ export default function contextHealthExtension(pi: ExtensionAPI) {
 		return box;
 	});
 
+	pi.on("after_provider_response", async (event) => {
+		lastProviderResponse = captureProviderResponse(event.status, event.headers);
+	});
+
 	pi.registerCommand("context-health", {
 		description: "Show subscription, cache, and rot health for the current branch",
 		handler: async (_args, ctx) => {
 			const snapshot = buildSnapshot(ctx);
+			const providerResponse = isProviderResponseDebugEnabled() ? lastProviderResponse : undefined;
 			pi.sendMessage({
 				customType: CUSTOM_TYPE,
-				content: buildDetails(snapshot),
+				content: buildDetails(snapshot, providerResponse),
 				display: true,
 				details: {
 					preview: buildPreview(snapshot),

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import { getCapabilities, hyperlink, Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -74,7 +74,8 @@ interface MarkdownWithFootnotes extends Markdown {
 	renderInlineTokens(tokens: any[], styleContext?: { applyText: (text: string) => string; stylePrefix: string }): string;
 }
 
-const stripAnsi = (value: string): string => value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07]*\x07/g, "");
+const stripAnsi = (value: string): string =>
+	value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
 
 const isAbsoluteWindowsPath = (value: string): boolean => /^[A-Za-z]:[\\/]/.test(value);
 
@@ -261,9 +262,9 @@ const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 	return `${baseUrl}:${target.line}:${target.column}`;
 };
 
-const formatHyperlink = (url: string | undefined, label: string): string => {
-	if (!url) return label;
-	return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
+const formatTerminalHyperlink = (url: string | undefined, label: string): string => {
+	if (!url || !getCapabilities().hyperlinks) return label;
+	return hyperlink(label, url);
 };
 
 const deriveInlineLabel = (href: string): string => {
@@ -324,9 +325,12 @@ const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, item
 	const rawLines = ["", markdown.theme.linkUrl(buildFootnoteHeaderLine(expanded, items.length))];
 	if (expanded) {
 		for (const item of items) {
-			let line = `${markdown.theme.linkUrl(`[${item.index}] `)}${formatHyperlink(item.openUrl, markdown.theme.link(markdown.theme.underline(item.displayHref)))}`;
+			let line = `${markdown.theme.linkUrl(`[${item.index}] `)}${formatTerminalHyperlink(
+				item.openUrl,
+				markdown.theme.link(markdown.theme.underline(item.displayHref)),
+			)}`;
 			if (item.vscodeUrl) {
-				line += ` ${formatHyperlink(item.vscodeUrl, markdown.theme.link(markdown.theme.underline("VS Code")))}`;
+				line += ` ${formatTerminalHyperlink(item.vscodeUrl, markdown.theme.link(markdown.theme.underline("VS Code")))}`;
 			}
 			rawLines.push(line);
 		}
@@ -385,71 +389,24 @@ const patchAssistantMessageRendering = () => {
 		}
 		let result = "";
 		const resolvedStyleContext = styleContext ?? this.getDefaultInlineStyleContext();
-		const { applyText, stylePrefix } = resolvedStyleContext;
-		const applyTextWithNewlines = (text: string) => text.split("\n").map((segment) => applyText(segment)).join("\n");
+		const { stylePrefix } = resolvedStyleContext;
 		for (const token of tokens) {
-			switch (token.type) {
-				case "text":
-					if (token.tokens && token.tokens.length > 0) result += this.renderInlineTokens(token.tokens, resolvedStyleContext);
-					else result += applyTextWithNewlines(token.text);
-					break;
-				case "paragraph":
-					result += this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					break;
-				case "strong": {
-					const boldContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					result += this.theme.bold(boldContent) + stylePrefix;
-					break;
-				}
-				case "em": {
-					const italicContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					result += this.theme.italic(italicContent) + stylePrefix;
-					break;
-				}
-				case "codespan":
-					result += this.theme.code(token.text) + stylePrefix;
-					break;
-				case "link": {
-					const hrefForComparison = token.href.startsWith("mailto:") ? token.href.slice(7) : token.href;
-					if (!isFileHref(token.href)) {
-						const linkText = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-						if (token.text === token.href || token.text === hrefForComparison) {
-							result += this.theme.link(this.theme.underline(linkText)) + stylePrefix;
-						} else {
-							result +=
-								this.theme.link(this.theme.underline(linkText)) +
-								this.theme.linkUrl(` (${token.href})`) +
-								stylePrefix;
-						}
-						break;
-					}
-					const linkText = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					const visibleLinkText = stripAnsi(linkText).trim();
-					const inlineLabel =
-						token.text === token.href || token.text === hrefForComparison || visibleLinkText.length === 0
-							? deriveInlineLabel(token.href)
-							: linkText;
-					const footnoteItem = registerFootnote(markdown, token.href);
-					const inlineLink = footnoteItem
-						? formatHyperlink(footnoteItem.openUrl, this.theme.link(this.theme.underline(inlineLabel)))
-						: this.theme.link(this.theme.underline(inlineLabel));
-					result += inlineLink + this.theme.linkUrl(`[${footnoteItem?.index ?? 0}]`) + stylePrefix;
-					break;
-				}
-				case "br":
-					result += "\n";
-					break;
-				case "del": {
-					const delContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					result += this.theme.strikethrough(delContent) + stylePrefix;
-					break;
-				}
-				case "html":
-					if ("raw" in token && typeof token.raw === "string") result += applyTextWithNewlines(token.raw);
-					break;
-				default:
-					if ("text" in token && typeof token.text === "string") result += applyTextWithNewlines(token.text);
+			if (token.type !== "link" || !isFileHref(token.href)) {
+				result += originalRenderInlineTokens.call(this, [token], resolvedStyleContext);
+				continue;
 			}
+			const hrefForComparison = token.href.startsWith("mailto:") ? token.href.slice(7) : token.href;
+			const linkText = originalRenderInlineTokens.call(this, token.tokens || [], resolvedStyleContext);
+			const visibleLinkText = stripAnsi(linkText).trim();
+			const inlineLabel =
+				token.text === token.href || token.text === hrefForComparison || visibleLinkText.length === 0
+					? deriveInlineLabel(token.href)
+					: linkText;
+			const footnoteItem = registerFootnote(markdown, token.href);
+			const inlineLink = footnoteItem
+				? formatTerminalHyperlink(footnoteItem.openUrl, this.theme.link(this.theme.underline(inlineLabel)))
+				: this.theme.link(this.theme.underline(inlineLabel));
+			result += inlineLink + this.theme.linkUrl(`[${footnoteItem?.index ?? 0}]`) + stylePrefix;
 		}
 		while (stylePrefix && result.endsWith(stylePrefix)) {
 			result = result.slice(0, -stylePrefix.length);

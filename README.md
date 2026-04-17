@@ -13,6 +13,9 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
+Pi version baseline: this repo is currently developed and validated against Pi `0.67.6`.
+Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version-notes.md).
+
 ## What Problem This Solves
 
 Pi already has a solid base prompt and a good default compaction system. But two problems still show up in real use:
@@ -143,6 +146,9 @@ Current metrics:
 - `cache`: rolling cache-read ratio across recent assistant turns
 - `rot`: compound freshness score based on context usage, turns since compaction, and uncached input since compaction
 
+Optional provider debug:
+- run Pi with `PI_TOOLS_CONTEXT_HEALTH_PROVIDER_DEBUG=1` and `/context-health` will also show the last provider status plus selected response headers for cache and rate-limit debugging
+
 In short: not more telemetry, but better telemetry.
 
 ## Extension 4: Notify
@@ -176,6 +182,7 @@ Why that is nice:
 
 Current behavior:
 - `/context-files` opens a toggle UI for discovered context files
+- discovery order comes from Pi's exported `loadProjectContextFiles()` utility so the toggle list tracks Pi core more closely
 - each file can be switched between `✓ enabled` and `× disabled`
 - disabled files are removed from the final `# Project Context` section before the model sees it
 - Pi's startup `[Context]` header still reflects core discovery, because that happens before extension filtering
@@ -196,11 +203,11 @@ Why that is nice:
 
 Current behavior:
 - assistant file links render inline as `label[1]`, `label[2]`, and so on
-- the inline file label stays directly clickable for normal file or path opening
+- the inline file label stays directly clickable for normal file or path opening when the terminal supports hyperlinks
 - the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
 - expanded footnotes show the full file target plus a `VS Code` open link for files and directories
 - `/file-footnotes` opens file footnotes from the latest assistant message when terminal hyperlinks are unavailable, with both `open` and `vscode` actions
-- web links and other non-file links keep Pi's normal inline style
+- web links and other non-file links stay on Pi's normal markdown rendering, including Pi's own OSC 8 hyperlink handling when supported
 
 Implementation note: this is an internal render patch against Pi's assistant markdown component, so it may need adjustment when Pi changes its internal message renderer.
 

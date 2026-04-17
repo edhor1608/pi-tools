@@ -1,5 +1,6 @@
 import fileFootnotesExtension, { setFileFootnotesExpanded } from "../extensions/file-footnotes.ts";
 import { initTheme } from "@mariozechner/pi-coding-agent";
+import { Markdown, setCapabilities } from "@mariozechner/pi-tui";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -8,8 +9,12 @@ const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
 const { AssistantMessageComponent } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,
 );
+const { getMarkdownTheme } = await import(
+	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "theme", "theme.js")).href,
+);
 
-const stripAnsi = (value: string): string => value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07]*\x07/g, "");
+const stripAnsi = (value: string): string =>
+	value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
 
 const assert = (condition: unknown, message: string): asserts condition => {
 	if (!condition) throw new Error(message);
@@ -58,8 +63,11 @@ const createCommandContext = (messages: any[]) => {
 };
 
 initTheme("dark");
+setCapabilities({ images: null, trueColor: true, hyperlinks: true });
 fileFootnotesExtension(piMock as any);
 assert(fileFootnotesCommand, "expected /file-footnotes command to register");
+
+setFileFootnotesExpanded(false);
 
 const component = new AssistantMessageComponent({
 	role: "assistant",
@@ -100,7 +108,18 @@ assert(
 	!collapsedLines.some((line) => line.includes("[1]") && line.includes("/Users/jonas/repos/pi-tools/README.md")),
 	"expected full footnote paths to stay hidden while collapsed",
 );
-assert(docsLine && docsLine.includes("(https://pi.dev)"), "expected non-file links to keep Pi's normal inline rendering");
+assert(docsLine && docsLine.includes("Pi docs"), "expected non-file links to keep a visible inline label");
+
+const webLinkText = "- [Pi docs](https://pi.dev)";
+const baselineMarkdown = new Markdown(webLinkText, 1, 0, getMarkdownTheme());
+const baselineWebLine = baselineMarkdown.render(120).find((line) => stripAnsi(line).includes("Pi docs"));
+const assistantWebOnly = new AssistantMessageComponent({
+	role: "assistant",
+	content: [{ type: "text", text: webLinkText }],
+	stopReason: "stop",
+});
+const assistantWebLine = assistantWebOnly.render(120).find((line) => stripAnsi(line).includes("Pi docs"));
+assert(baselineWebLine && assistantWebLine && assistantWebLine === baselineWebLine, "expected non-file links in assistant messages to keep Pi core markdown rendering");
 
 setFileFootnotesExpanded(true);
 
@@ -175,6 +194,21 @@ assert(
 	"expected /file-footnotes vscode 1 to report success after falling back to the VS Code URI",
 );
 
+setCapabilities({ images: null, trueColor: true, hyperlinks: false });
+setFileFootnotesExpanded(false);
+const noHyperlinkComponent = new AssistantMessageComponent({
+	role: "assistant",
+	content: [{ type: "text", text: "- [README.md](/Users/jonas/repos/pi-tools/README.md)" }],
+	stopReason: "stop",
+});
+const noHyperlinkRawLines = noHyperlinkComponent.render(120);
+const noHyperlinkLine = noHyperlinkRawLines.map(stripAnsi).find((line) => line.includes("README.md"));
+assert(noHyperlinkLine && noHyperlinkLine.includes("[1]"), "expected file footnote numbering to remain when hyperlinks are unavailable");
+assert(
+	!noHyperlinkRawLines.some((line) => line.includes("/Users/jonas/repos/pi-tools/README.md")),
+	"expected file footnotes to avoid injecting hidden OSC URLs when terminal hyperlinks are disabled",
+);
+
 console.log(
 	JSON.stringify(
 		{
@@ -182,15 +216,17 @@ console.log(
 			configLine,
 			worktreeLine,
 			collapsedSummary,
+			docsLine,
+			webLinkMatchesCore: assistantWebLine === baselineWebLine,
 			expandedHint,
 			readmeFootnote,
 			configFootnote,
 			worktreeFootnote,
 			vscodeLines,
-			docsLine,
 			staleCommandNotifications: staleCommand.notifications,
 			encodedCommandNotifications: encodedCommand.notifications,
 			encodedCommandExecCalls: execCalls,
+			noHyperlinkLine,
 		},
 		null,
 		2,
