@@ -88,13 +88,13 @@ if (!readmeFootnote || !configFootnote || !worktreeFootnote) {
 if (vscodeLines.length < 3) {
 	throw new Error("expected every expanded file footnote to offer a VS Code link");
 }
-if (!expandedRawLines.some((line) => line.includes("vscode://file/Users/jonas/repos/pi-tools/README.md"))) {
+if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/README.md"))) {
 	throw new Error("expected README.md footnote to include a VS Code hyperlink target");
 }
-if (!expandedRawLines.some((line) => line.includes("vscode://file/Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts"))) {
+if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts"))) {
 	throw new Error("expected config.ts footnote to include a VS Code hyperlink target");
 }
-if (!expandedRawLines.some((line) => line.includes("vscode://file/Users/jonas/repos/pi-tools\x07"))) {
+if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools"))) {
 	throw new Error("expected worktree root footnote to include a VS Code hyperlink target");
 }
 

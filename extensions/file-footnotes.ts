@@ -19,6 +19,7 @@ const ASSISTANT_MARKDOWN = Symbol.for("stead.pi-tools.fileFootnotes.assistantMar
 const FOOTNOTE_STATE = Symbol.for("stead.pi-tools.fileFootnotes.state");
 const PATCHED_CACHE = Symbol.for("stead.pi-tools.fileFootnotes.cache");
 const FOOTNOTE_VISIBILITY = Symbol.for("stead.pi-tools.fileFootnotes.visibility");
+const LAST_RENDERED_FOOTNOTES = Symbol.for("stead.pi-tools.fileFootnotes.lastRendered");
 const FOOTNOTE_TOGGLE_SHORTCUT = Key.ctrlShift("o");
 
 export const FILE_FOOTNOTES_TOGGLE_SHORTCUT = FOOTNOTE_TOGGLE_SHORTCUT;
@@ -27,6 +28,9 @@ interface FileFootnoteItem {
 	index: number;
 	href: string;
 	displayHref: string;
+	filesystemPath?: string;
+	line?: number;
+	column?: number;
 	openUrl?: string;
 	vscodeUrl?: string;
 }
@@ -91,6 +95,16 @@ const getFootnoteVisibilityState = (): FootnoteVisibilityState => {
 	const created: FootnoteVisibilityState = { expanded: false };
 	globalScope[FOOTNOTE_VISIBILITY] = created;
 	return created;
+};
+
+const getLastRenderedFootnotes = (): FileFootnoteItem[] => {
+	const globalScope = globalThis as Record<PropertyKey, unknown>;
+	return ((globalScope[LAST_RENDERED_FOOTNOTES] as FileFootnoteItem[] | undefined) ?? []).map((item) => ({ ...item }));
+};
+
+const setLastRenderedFootnotes = (items: FileFootnoteItem[]): void => {
+	const globalScope = globalThis as Record<PropertyKey, unknown>;
+	globalScope[LAST_RENDERED_FOOTNOTES] = items.map((item) => ({ ...item }));
 };
 
 export const getFileFootnotesExpanded = (): boolean => getFootnoteVisibilityState().expanded;
@@ -183,7 +197,10 @@ const buildDefaultOpenUrl = (target: ParsedFileTarget): string | undefined => {
 
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 	if (!target.filesystemPath) return undefined;
-	const baseUrl = pathToFileURL(target.filesystemPath).href.replace(/^file:\/\//, "vscode://file");
+	const baseUrl =
+		process.platform === "win32"
+			? `vscode://file/${target.filesystemPath.replace(/\\/g, "/")}`
+			: `vscode://file/${target.filesystemPath}`;
 	if (!target.line) return baseUrl;
 	if (!target.column) return `${baseUrl}:${target.line}`;
 	return `${baseUrl}:${target.line}:${target.column}`;
@@ -211,6 +228,9 @@ const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFo
 		index: state.items.length + 1,
 		href,
 		displayHref: target.displayHref,
+		filesystemPath: target.filesystemPath,
+		line: target.line,
+		column: target.column,
 		openUrl: buildDefaultOpenUrl(target),
 		vscodeUrl: buildVsCodeUrl(target),
 	};
@@ -227,6 +247,7 @@ const buildFootnoteHeaderLine = (expanded: boolean, itemCount: number): string =
 
 const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, items: FileFootnoteItem[]): string[] => {
 	if (items.length === 0) return [];
+	setLastRenderedFootnotes(items);
 	const contentWidth = Math.max(1, width - markdown.paddingX * 2);
 	const leftMargin = " ".repeat(markdown.paddingX);
 	const rightMargin = " ".repeat(markdown.paddingX);
@@ -408,6 +429,36 @@ const patchAssistantMessageRendering = () => {
 	};
 };
 
+const openUriWithSystem = async (pi: ExtensionAPI, uri: string): Promise<void> => {
+	if (process.platform === "darwin") {
+		await pi.exec("open", [uri], { timeout: 5000 });
+		return;
+	}
+	if (process.platform === "win32") {
+		await pi.exec("cmd", ["/c", "start", "", uri], { timeout: 5000 });
+		return;
+	}
+	await pi.exec("xdg-open", [uri], { timeout: 5000 });
+};
+
+const openFootnoteInVsCode = async (pi: ExtensionAPI, item: FileFootnoteItem): Promise<void> => {
+	if (!item.filesystemPath) throw new Error(`No local filesystem path for footnote [${item.index}]`);
+	const target = item.line ? `${item.filesystemPath}:${item.line}${item.column ? `:${item.column}` : ""}` : item.filesystemPath;
+	try {
+		const result = await pi.exec("code", item.line ? ["--goto", target] : [item.filesystemPath], { timeout: 5000 });
+		if (result.code === 0) return;
+	} catch {
+		// Fall back to URL scheme if the code CLI is unavailable.
+	}
+	if (!item.vscodeUrl) throw new Error(`No VS Code URL for footnote [${item.index}]`);
+	await openUriWithSystem(pi, item.vscodeUrl);
+};
+
+const openFootnoteNormally = async (pi: ExtensionAPI, item: FileFootnoteItem): Promise<void> => {
+	if (!item.openUrl) throw new Error(`No open URL for footnote [${item.index}]`);
+	await openUriWithSystem(pi, item.openUrl);
+};
+
 export default function fileFootnotesExtension(pi: ExtensionAPI) {
 	setFileFootnotesExpanded(false);
 	patchAssistantMessageRendering();
@@ -417,6 +468,49 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 			const expanded = toggleFileFootnotesExpanded();
 			ctx.ui.notify(`File footnotes ${expanded ? "expanded" : "collapsed"}`, "info");
 			(ctx.ui as { fullRedraw?: () => void }).fullRedraw?.();
+		},
+	});
+	pi.registerCommand?.("file-footnotes", {
+		description: "Open the latest rendered file footnotes",
+		handler: async (args, ctx) => {
+			const items = getLastRenderedFootnotes();
+			if (items.length === 0) {
+				ctx.ui.notify("No rendered file footnotes available yet", "warning");
+				return;
+			}
+
+			const trimmed = args.trim();
+			const openAction = async (mode: "open" | "vscode", index: number) => {
+				const item = items.find((item) => item.index === index);
+				if (!item) throw new Error(`Unknown footnote index: ${index}`);
+				if (mode === "vscode") await openFootnoteInVsCode(pi, item);
+				else await openFootnoteNormally(pi, item);
+				ctx.ui.notify(`Opened footnote [${index}] ${mode === "vscode" ? "in VS Code" : "with the system opener"}`, "info");
+			};
+
+			try {
+				if (trimmed) {
+					const match = /^(open|vscode)\s+(\d+)$/.exec(trimmed);
+					if (!match) {
+						ctx.ui.notify("Usage: /file-footnotes [open|vscode] <index>", "warning");
+						return;
+					}
+					await openAction(match[1] as "open" | "vscode", Number(match[2]));
+					return;
+				}
+
+				const labels = items.map((item) => `[${item.index}] ${item.displayHref}`);
+				const selectedLabel = await ctx.ui.select("Open file footnote", labels);
+				if (!selectedLabel) return;
+				const selectedIndex = labels.indexOf(selectedLabel);
+				if (selectedIndex === -1) return;
+				const action = await ctx.ui.select("Open how?", ["Open path", "Open in VS Code"]);
+				if (!action) return;
+				await openAction(action === "Open in VS Code" ? "vscode" : "open", items[selectedIndex]!.index);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "Failed to open file footnote";
+				ctx.ui.notify(message, "error");
+			}
 		},
 	});
 }
