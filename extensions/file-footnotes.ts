@@ -19,7 +19,6 @@ const ASSISTANT_MARKDOWN = Symbol.for("stead.pi-tools.fileFootnotes.assistantMar
 const FOOTNOTE_STATE = Symbol.for("stead.pi-tools.fileFootnotes.state");
 const PATCHED_CACHE = Symbol.for("stead.pi-tools.fileFootnotes.cache");
 const FOOTNOTE_VISIBILITY = Symbol.for("stead.pi-tools.fileFootnotes.visibility");
-const LAST_RENDERED_FOOTNOTES = Symbol.for("stead.pi-tools.fileFootnotes.lastRendered");
 const FOOTNOTE_TOGGLE_SHORTCUT = Key.ctrlShift("o");
 
 export const FILE_FOOTNOTES_TOGGLE_SHORTCUT = FOOTNOTE_TOGGLE_SHORTCUT;
@@ -97,16 +96,6 @@ const getFootnoteVisibilityState = (): FootnoteVisibilityState => {
 	return created;
 };
 
-const getLastRenderedFootnotes = (): FileFootnoteItem[] => {
-	const globalScope = globalThis as Record<PropertyKey, unknown>;
-	return ((globalScope[LAST_RENDERED_FOOTNOTES] as FileFootnoteItem[] | undefined) ?? []).map((item) => ({ ...item }));
-};
-
-const setLastRenderedFootnotes = (items: FileFootnoteItem[]): void => {
-	const globalScope = globalThis as Record<PropertyKey, unknown>;
-	globalScope[LAST_RENDERED_FOOTNOTES] = items.map((item) => ({ ...item }));
-};
-
 export const getFileFootnotesExpanded = (): boolean => getFootnoteVisibilityState().expanded;
 
 export const setFileFootnotesExpanded = (expanded: boolean): boolean => {
@@ -118,6 +107,71 @@ export const toggleFileFootnotesExpanded = (): boolean => {
 	const visibility = getFootnoteVisibilityState();
 	visibility.expanded = !visibility.expanded;
 	return visibility.expanded;
+};
+
+const isEscaped = (text: string, index: number): boolean => {
+	let backslashCount = 0;
+	for (let i = index - 1; i >= 0 && text[i] === "\\"; i--) backslashCount++;
+	return backslashCount % 2 === 1;
+};
+
+const findUnescapedChar = (text: string, char: string, startIndex = 0): number => {
+	for (let i = startIndex; i < text.length; i++) {
+		if (text[i] === char && !isEscaped(text, i)) return i;
+	}
+	return -1;
+};
+
+const findMatchingDelimiter = (text: string, startIndex: number, openChar: string, closeChar: string): number => {
+	let depth = 0;
+	for (let i = startIndex; i < text.length; i++) {
+		if (isEscaped(text, i)) continue;
+		if (text[i] === openChar) depth++;
+		else if (text[i] === closeChar) {
+			depth--;
+			if (depth === 0) return i;
+		}
+	}
+	return -1;
+};
+
+const stripOptionalLinkTitle = (destination: string): string => {
+	const trimmed = destination.trim();
+	if (trimmed.startsWith("<")) {
+		const closingAngleIndex = findUnescapedChar(trimmed, ">", 1);
+		if (closingAngleIndex !== -1) return trimmed.slice(1, closingAngleIndex).trim();
+	}
+	return trimmed.replace(/\s+(?:"(?:\\"|[^"])*"|'(?:\\'|[^'])*'|\([^()]*\))\s*$/, "").trim();
+};
+
+const collectMarkdownFileHrefs = (text: string): string[] => {
+	const hrefs: string[] = [];
+	for (let i = 0; i < text.length; i++) {
+		const char = text[i];
+		if (char === "<" && !isEscaped(text, i)) {
+			const closingAngleIndex = findUnescapedChar(text, ">", i + 1);
+			if (closingAngleIndex !== -1) {
+				const candidate = text.slice(i + 1, closingAngleIndex).trim();
+				if (isFileHref(candidate)) {
+					hrefs.push(candidate);
+					i = closingAngleIndex;
+					continue;
+				}
+			}
+		}
+		if (char !== "[" || isEscaped(text, i) || text[i - 1] === "!") continue;
+		const labelEnd = findMatchingDelimiter(text, i, "[", "]");
+		if (labelEnd === -1) continue;
+		let openParenIndex = labelEnd + 1;
+		while (openParenIndex < text.length && /\s/.test(text[openParenIndex]!)) openParenIndex++;
+		if (text[openParenIndex] !== "(") continue;
+		const closeParenIndex = findMatchingDelimiter(text, openParenIndex, "(", ")");
+		if (closeParenIndex === -1) continue;
+		const href = stripOptionalLinkTitle(text.slice(openParenIndex + 1, closeParenIndex));
+		if (isFileHref(href)) hrefs.push(href);
+		i = closeParenIndex;
+	}
+	return hrefs;
 };
 
 const parseHashLocation = (hash: string): { line?: number; column?: number } => {
@@ -197,10 +251,11 @@ const buildDefaultOpenUrl = (target: ParsedFileTarget): string | undefined => {
 
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 	if (!target.filesystemPath) return undefined;
+	const fileUrl = pathToFileURL(target.filesystemPath).href;
 	const baseUrl =
 		process.platform === "win32"
-			? `vscode://file/${target.filesystemPath.replace(/\\/g, "/")}`
-			: `vscode://file/${target.filesystemPath}`;
+			? fileUrl.replace(/^file:\/\/\//, "vscode://file/")
+			: fileUrl.replace(/^file:\/\//, "vscode://file/");
 	if (!target.line) return baseUrl;
 	if (!target.column) return `${baseUrl}:${target.line}`;
 	return `${baseUrl}:${target.line}:${target.column}`;
@@ -218,9 +273,7 @@ const deriveInlineLabel = (href: string): string => {
 	return base || target.displayHref;
 };
 
-const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFootnoteItem | undefined => {
-	const state = markdown[FOOTNOTE_STATE];
-	if (!state) return undefined;
+const registerFootnoteItem = (state: FileFootnoteState, href: string): FileFootnoteItem => {
 	const existing = state.itemByHref.get(href);
 	if (existing) return existing;
 	const target = parseFileTarget(href);
@@ -239,15 +292,31 @@ const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFo
 	return item;
 };
 
+const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFootnoteItem | undefined => {
+	const state = markdown[FOOTNOTE_STATE];
+	if (!state) return undefined;
+	return registerFootnoteItem(state, href);
+};
+
 const buildFootnoteHeaderLine = (expanded: boolean, itemCount: number): string => {
 	if (expanded) return `${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to hide file footnotes")}`;
 	const noun = itemCount === 1 ? "reference" : "references";
 	return `${itemCount} file ${noun} hidden ${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to show")}`;
 };
 
+const extractFileFootnotesFromText = (text: string): FileFootnoteItem[] => {
+	const state: FileFootnoteState = {
+		items: [],
+		itemByHref: new Map<string, FileFootnoteItem>(),
+	};
+	for (const href of collectMarkdownFileHrefs(text.replace(/\t/g, "   "))) {
+		registerFootnoteItem(state, href);
+	}
+	return state.items;
+};
+
 const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, items: FileFootnoteItem[]): string[] => {
 	if (items.length === 0) return [];
-	setLastRenderedFootnotes(items);
 	const contentWidth = Math.max(1, width - markdown.paddingX * 2);
 	const leftMargin = " ".repeat(markdown.paddingX);
 	const rightMargin = " ".repeat(markdown.paddingX);
@@ -429,6 +498,26 @@ const patchAssistantMessageRendering = () => {
 	};
 };
 
+const getLatestAssistantText = (ctx: { sessionManager: { getBranch: () => any[] } }): { text?: string; error?: string } => {
+	const branch = ctx.sessionManager.getBranch();
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i];
+		if (entry?.type !== "message") continue;
+		const message = entry.message;
+		if (!message || message.role !== "assistant") continue;
+		if (message.stopReason !== "stop") {
+			return { error: `Last assistant message incomplete (${message.stopReason})` };
+		}
+		const textParts = Array.isArray(message.content)
+			? message.content
+					.filter((content): content is { type: "text"; text: string } => content?.type === "text" && typeof content.text === "string")
+					.map((content) => content.text)
+			: [];
+		return { text: textParts.join("\n") };
+	}
+	return { error: "No assistant messages found" };
+};
+
 const openUriWithSystem = async (pi: ExtensionAPI, uri: string): Promise<void> => {
 	if (process.platform === "darwin") {
 		await pi.exec("open", [uri], { timeout: 5000 });
@@ -471,11 +560,17 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 		},
 	});
 	pi.registerCommand?.("file-footnotes", {
-		description: "Open the latest rendered file footnotes",
+		description: "Open file footnotes from the latest assistant message",
 		handler: async (args, ctx) => {
-			const items = getLastRenderedFootnotes();
+			const latestAssistant = getLatestAssistantText(ctx);
+			if (latestAssistant.error) {
+				ctx.ui.notify(latestAssistant.error, latestAssistant.error.includes("incomplete") ? "error" : "warning");
+				return;
+			}
+
+			const items = extractFileFootnotesFromText(latestAssistant.text ?? "");
 			if (items.length === 0) {
-				ctx.ui.notify("No rendered file footnotes available yet", "warning");
+				ctx.ui.notify("No file footnotes found in the latest assistant message", "warning");
 				return;
 			}
 

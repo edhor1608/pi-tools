@@ -11,8 +11,55 @@ const { AssistantMessageComponent } = await import(
 
 const stripAnsi = (value: string): string => value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07]*\x07/g, "");
 
+const assert = (condition: unknown, message: string): asserts condition => {
+	if (!condition) throw new Error(message);
+};
+
+interface ExecCall {
+	command: string;
+	args: string[];
+}
+
+let fileFootnotesCommand: ((args: string, ctx: any) => Promise<void>) | undefined;
+const execCalls: ExecCall[] = [];
+
+const piMock = {
+	async exec(command: string, args: string[]) {
+		execCalls.push({ command, args });
+		if (command === "code") {
+			return { code: 1, stdout: "", stderr: "missing code cli" };
+		}
+		return { code: 0, stdout: "", stderr: "" };
+	},
+	registerCommand(name: string, config: { handler: (args: string, ctx: any) => Promise<void> }) {
+		if (name === "file-footnotes") fileFootnotesCommand = config.handler;
+	},
+	registerShortcut() {},
+};
+
+const createCommandContext = (messages: any[]) => {
+	const notifications: Array<{ level: string; message: string }> = [];
+	return {
+		notifications,
+		ctx: {
+			sessionManager: {
+				getBranch: () => messages.map((message, index) => ({ id: `entry-${index + 1}`, type: "message", message })),
+			},
+			ui: {
+				notify(message: string, level: string) {
+					notifications.push({ level, message });
+				},
+				async select() {
+					return null;
+				},
+			},
+		},
+	};
+};
+
 initTheme("dark");
-fileFootnotesExtension({} as any);
+fileFootnotesExtension(piMock as any);
+assert(fileFootnotesCommand, "expected /file-footnotes command to register");
 
 const component = new AssistantMessageComponent({
 	role: "assistant",
@@ -39,33 +86,21 @@ const worktreeLine = collapsedLines.find((line) => line.includes("worktree root"
 const docsLine = collapsedLines.find((line) => line.includes("Pi docs"));
 const collapsedSummary = collapsedLines.find((line) => line.includes("file references hidden"));
 
-if (!readmeLine || readmeLine.includes("(/Users/jonas/repos/pi-tools/README.md)")) {
-	throw new Error("expected file link path to be removed from the inline README.md bullet");
-}
-if (!configLine || configLine.includes("(/Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts)")) {
-	throw new Error("expected file link path to be removed from the inline config.ts bullet");
-}
-if (!worktreeLine || worktreeLine.includes("(/Users/jonas/repos/pi-tools)")) {
-	throw new Error("expected file link path to be removed from the inline worktree bullet");
-}
-if (!readmeLine.includes("[1]")) {
-	throw new Error("expected inline numbered footnote for README.md");
-}
-if (!configLine.includes("[2]")) {
-	throw new Error("expected inline numbered footnote for config.ts");
-}
-if (!worktreeLine.includes("[3]")) {
-	throw new Error("expected inline numbered footnote for worktree root");
-}
-if (!collapsedSummary || !collapsedSummary.includes("ctrl+shift+o to show")) {
-	throw new Error("expected collapsed footnote summary with the toggle hotkey");
-}
-if (collapsedLines.some((line) => line.includes("[1]") && line.includes("/Users/jonas/repos/pi-tools/README.md"))) {
-	throw new Error("expected full footnote paths to stay hidden while collapsed");
-}
-if (!docsLine || !docsLine.includes("(https://pi.dev)")) {
-	throw new Error("expected non-file links to keep Pi's normal inline rendering");
-}
+assert(readmeLine && !readmeLine.includes("(/Users/jonas/repos/pi-tools/README.md)"), "expected file link path to be removed from the inline README.md bullet");
+assert(
+	configLine && !configLine.includes("(/Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts)"),
+	"expected file link path to be removed from the inline config.ts bullet",
+);
+assert(worktreeLine && !worktreeLine.includes("(/Users/jonas/repos/pi-tools)"), "expected file link path to be removed from the inline worktree bullet");
+assert(readmeLine.includes("[1]"), "expected inline numbered footnote for README.md");
+assert(configLine.includes("[2]"), "expected inline numbered footnote for config.ts");
+assert(worktreeLine.includes("[3]"), "expected inline numbered footnote for worktree root");
+assert(collapsedSummary && collapsedSummary.includes("ctrl+shift+o to show"), "expected collapsed footnote summary with the toggle hotkey");
+assert(
+	!collapsedLines.some((line) => line.includes("[1]") && line.includes("/Users/jonas/repos/pi-tools/README.md")),
+	"expected full footnote paths to stay hidden while collapsed",
+);
+assert(docsLine && docsLine.includes("(https://pi.dev)"), "expected non-file links to keep Pi's normal inline rendering");
 
 setFileFootnotesExpanded(true);
 
@@ -79,24 +114,66 @@ const configFootnote = expandedLines.find(
 const worktreeFootnote = expandedLines.find((line) => line.includes("[3]") && line.includes("/Users/jonas/repos/pi-tools"));
 const vscodeLines = expandedLines.filter((line) => line.includes("VS Code"));
 
-if (!expandedHint) {
-	throw new Error("expected expanded footnotes to render a collapse hint");
-}
-if (!readmeFootnote || !configFootnote || !worktreeFootnote) {
-	throw new Error("expected expanded footnotes to render full file and path targets");
-}
-if (vscodeLines.length < 3) {
-	throw new Error("expected every expanded file footnote to offer a VS Code link");
-}
-if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/README.md"))) {
-	throw new Error("expected README.md footnote to include a VS Code hyperlink target");
-}
-if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts"))) {
-	throw new Error("expected config.ts footnote to include a VS Code hyperlink target");
-}
-if (!expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools"))) {
-	throw new Error("expected worktree root footnote to include a VS Code hyperlink target");
-}
+assert(expandedHint, "expected expanded footnotes to render a collapse hint");
+assert(readmeFootnote && configFootnote && worktreeFootnote, "expected expanded footnotes to render full file and path targets");
+assert(vscodeLines.length >= 3, "expected every expanded file footnote to offer a VS Code link");
+assert(
+	expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/README.md")),
+	"expected README.md footnote to include a VS Code hyperlink target",
+);
+assert(
+	expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools/extensions/structured-compaction/config.ts")),
+	"expected config.ts footnote to include a VS Code hyperlink target",
+);
+assert(
+	expandedRawLines.some((line) => line.includes("vscode://file//Users/jonas/repos/pi-tools")),
+	"expected worktree root footnote to include a VS Code hyperlink target",
+);
+
+execCalls.length = 0;
+const staleCommand = createCommandContext([
+	{
+		role: "assistant",
+		stopReason: "stop",
+		content: [{ type: "text", text: "- [README.md](/Users/jonas/repos/pi-tools/README.md)" }],
+	},
+	{
+		role: "assistant",
+		stopReason: "stop",
+		content: [{ type: "text", text: "No files here" }],
+	},
+]);
+await fileFootnotesCommand!("open 1", staleCommand.ctx);
+assert(execCalls.length === 0, "expected /file-footnotes not to open stale footnotes from an older assistant message");
+assert(
+	staleCommand.notifications.some(
+		(notification) => notification.level === "warning" && notification.message.includes("latest assistant message"),
+	),
+	"expected /file-footnotes to warn when the latest assistant message has no file footnotes",
+);
+
+execCalls.length = 0;
+const encodedCommand = createCommandContext([
+	{
+		role: "assistant",
+		stopReason: "stop",
+		content: [{ type: "text", text: "- [odd file](file:///Users/jonas/My%20Folder/file%23name.ts)" }],
+	},
+]);
+await fileFootnotesCommand!("vscode 1", encodedCommand.ctx);
+const codeCall = execCalls.find((call) => call.command === "code");
+const openCall = execCalls.find((call) => call.command === "open");
+assert(codeCall && codeCall.args[0] === "/Users/jonas/My Folder/file#name.ts", "expected VS Code fallback to try the decoded filesystem path first");
+assert(
+	openCall && openCall.args[0] === "vscode://file//Users/jonas/My%20Folder/file%23name.ts",
+	"expected VS Code fallback URI to keep path encoding intact",
+);
+assert(
+	encodedCommand.notifications.some(
+		(notification) => notification.level === "info" && notification.message.includes("Opened footnote [1] in VS Code"),
+	),
+	"expected /file-footnotes vscode 1 to report success after falling back to the VS Code URI",
+);
 
 console.log(
 	JSON.stringify(
@@ -111,6 +188,9 @@ console.log(
 			worktreeFootnote,
 			vscodeLines,
 			docsLine,
+			staleCommandNotifications: staleCommand.notifications,
+			encodedCommandNotifications: encodedCommand.notifications,
+			encodedCommandExecCalls: execCalls,
 		},
 		null,
 		2,

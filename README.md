@@ -199,7 +199,7 @@ Current behavior:
 - the inline file label stays directly clickable for normal file or path opening
 - the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
 - expanded footnotes show the full file target plus a `VS Code` open link for files and directories
-- `/file-footnotes` opens the latest rendered footnotes when terminal hyperlinks are unavailable, with both `open` and `vscode` actions
+- `/file-footnotes` opens file footnotes from the latest assistant message when terminal hyperlinks are unavailable, with both `open` and `vscode` actions
 - web links and other non-file links keep Pi's normal inline style
 
 Implementation note: this is an internal render patch against Pi's assistant markdown component, so it may need adjustment when Pi changes its internal message renderer.
@@ -391,7 +391,7 @@ What you should see:
 - the inline file label still opens the file or path directly in terminals that support hyperlinks
 - the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
 - expanded footnotes show the full target plus a `VS Code` open link
-- `/file-footnotes` lets you pick a rendered footnote and choose `Open path` or `Open in VS Code`
+- `/file-footnotes` lets you pick a footnote from the latest assistant message and choose `Open path` or `Open in VS Code`
 - `/file-footnotes open <index>` and `/file-footnotes vscode <index>` also work directly
 - normal web links still render the way Pi normally renders them
 
