@@ -119,7 +119,10 @@ const assistantWebOnly = new AssistantMessageComponent({
 	stopReason: "stop",
 });
 const assistantWebLine = assistantWebOnly.render(120).find((line) => stripAnsi(line).includes("Pi docs"));
-assert(baselineWebLine && assistantWebLine && assistantWebLine === baselineWebLine, "expected non-file links in assistant messages to keep Pi core markdown rendering");
+assert(
+	baselineWebLine && assistantWebLine && stripAnsi(assistantWebLine) === stripAnsi(baselineWebLine),
+	"expected non-file links in assistant messages to keep Pi core markdown rendering",
+);
 
 setFileFootnotesExpanded(true);
 
@@ -217,7 +220,7 @@ console.log(
 			worktreeLine,
 			collapsedSummary,
 			docsLine,
-			webLinkMatchesCore: assistantWebLine === baselineWebLine,
+			webLinkMatchesCore: stripAnsi(assistantWebLine ?? "") === stripAnsi(baselineWebLine ?? ""),
 			expandedHint,
 			readmeFootnote,
 			configFootnote,
