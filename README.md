@@ -1,11 +1,12 @@
 # pi-tools
 
-`pi-tools` is a Pi package focused on one thing: better context.
+`pi-tools` is a Pi package focused on better context and cleaner task flow.
 
-It ships seven separate extensions that improve Pi in different parts of the same loop:
+It ships eight separate extensions that improve Pi in different parts of the same loop:
 - `model-system-prompt` improves the context Pi sends into a model
 - `context-health` shows whether the current branch is healthy in terms of subscription pressure, cache utilization, and context rot
 - `context-files` lets you disable discovered AGENTS/CLAUDE context files without renaming them
+- `worktrees` helps you reuse or create the right git worktree for task, branch, and PR work
 - `file-footnotes` turns inline file links in assistant messages into numbered footnotes
 - `notify` makes Pi feel more alive in the terminal with title updates and native notifications
 - `stash` stores full deferred prompts with controlled release modes
@@ -18,9 +19,10 @@ Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version
 
 ## What Problem This Solves
 
-Pi already has a solid base prompt and a good default compaction system. But two problems still show up in real use:
+Pi already has a solid base prompt and a good default compaction system. But a few problems still show up in real use:
 - different providers and models respond better to different extra instructions
 - long sessions can lose continuity when older history gets compressed too aggressively
+- task work in the same repo benefits from isolated, reusable worktrees instead of piling everything into one checkout
 
 `pi-tools` addresses both.
 
@@ -28,6 +30,7 @@ These extensions improve different parts of the same session loop:
 - model-specific prompt fragments help Pi speak to each model in a way that fits that model better
 - context health shows whether the current branch is still healthy
 - context-files lets you decide which discovered context files actually reach the model
+- worktrees makes task, PR, and branch work easier to isolate and resume cleanly
 - file-footnotes makes assistant answers with many file references easier to read
 - notify shows that something is happening while the agent is working and when it needs you again
 - stash gives the user a third message lane for prompts that should be saved now and released later
@@ -40,6 +43,7 @@ They are all context-quality tools.
 One shapes context before a request is sent.
 One shows whether the current branch is still healthy.
 One lets you disable inherited context files without renaming them.
+One makes it easier to keep task work in the right git worktree.
 One makes file-heavy assistant answers easier to read.
 One makes the terminal itself better at reflecting agent state.
 One gives the user a deferred-prompt stash.
@@ -50,11 +54,12 @@ That makes this package useful as a complete setup:
 - better visibility into whether the current branch is still healthy
 - better visibility into whether Pi is actively working or waiting on you
 - control over which inherited context files actually count
+- easier reuse and creation of dedicated worktrees for task-oriented work
 - cleaner assistant answers when many file references are involved
 - a clean way to save future prompts without queueing them too early
 - better continuity later in the same session
 - one package source
-- seven separately manageable extensions
+- eight separately manageable extensions
 - no Pi core fork
 
 ## Extension 1: Model-Specific System Prompts
@@ -247,6 +252,30 @@ Shortcuts:
 
 In short: this is the right home for "save this next prompt for later".
 
+## Extension 8: Worktrees
+
+This extension helps you keep task, branch, issue, and PR work in the right git worktree without forcing every Pi session to start inside one.
+
+Why that is nice:
+- you can reuse an existing worktree before creating a duplicate one
+- new worktrees land in a predictable place under `~/worktrees`
+- the extension can offer setup after creation or reuse so the checkout is ready to work in
+- a narrow input trigger can catch strong PR or issue-style prompts before the agent starts working in the wrong checkout
+- normal freeform Pi sessions still work outside managed worktrees
+
+Current behavior:
+- `/worktrees ensure [query]` reuses or creates a worktree for a PR, issue, branch, or task query
+- `/worktrees list` shows worktrees for the current repository
+- `/worktrees cleanup` finds safe cleanup candidates and removes only selected clean entries
+- managed worktrees live under `~/worktrees/<host>/<owner>/<repo>/<name>` or `~/worktrees/local/<repo>/<name>` when no remote can be parsed
+- setup heuristics currently cover common JS and Go repos
+- a narrow input trigger can intercept strong signals like PR URLs before the agent starts coding in the wrong checkout
+- the extension never assumes that every Pi session must run inside a managed worktree
+
+Implementation note: because Pi cannot transparently move the current runtime into a new cwd, the extension prepares or reuses the worktree and then shows the exact `cd ... && pi` command to continue there.
+
+In short: worktrees become the easy path for task-oriented repo work, without turning Pi into a rigid workflow harness.
+
 ## Install This Package
 
 ### Install from git
@@ -269,11 +298,12 @@ pi install /absolute/path/to/pi-tools
 
 ## What Gets Loaded
 
-This package exposes seven separate extension resources:
+This package exposes eight separate extension resources:
 - `extensions/model-system-prompt.ts`
 - `extensions/context-health.ts`
 - `extensions/context-files.ts`
 - `extensions/file-footnotes.ts`
+- `extensions/worktrees.ts`
 - `extensions/notify.ts`
 - `extensions/stash.ts`
 - `extensions/structured-compaction/index.ts`
@@ -295,6 +325,7 @@ Extensions:
 - `context-health`
 - `context-files`
 - `file-footnotes`
+- `worktrees`
 - `notify`
 - `structured-compaction`
 
@@ -320,6 +351,7 @@ This is a good starting point if you want the core context setup but want `stash
         "+extensions/context-health.ts",
         "+extensions/context-files.ts",
         "+extensions/file-footnotes.ts",
+        "+extensions/worktrees.ts",
         "+extensions/notify.ts",
         "+extensions/structured-compaction/index.ts",
         "-extensions/stash.ts"
@@ -411,6 +443,25 @@ Use it when Pi finds the right context files, but you do not want all of them to
 ```
 
 Then toggle entries on or off in the UI. Disabled files are removed from the final prompt before the model sees it.
+
+### Worktrees
+
+Use it when the task clearly belongs in its own checkout or when you want to reuse an existing PR, issue, or branch worktree:
+
+```text
+/worktrees ensure 1234
+/worktrees ensure ABC-123
+/worktrees ensure feature/checkout-cache
+/worktrees list
+/worktrees cleanup
+```
+
+What you should see:
+- reuse of an existing matching worktree before a duplicate one is created
+- new worktrees under `~/worktrees/...`
+- a base-ref picker when a new branch must be created
+- an optional setup confirmation for supported project types
+- a final report showing the exact `cd ... && pi` command for the target worktree
 
 ### Stash
 
