@@ -1,5 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { getSettingsListTheme, getAgentDir, DynamicBorder, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+	getSettingsListTheme,
+	getAgentDir,
+	loadProjectContextFiles,
+	DynamicBorder,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import { Container, SettingsList, Text, type SettingItem } from "@mariozechner/pi-tui";
 import { join, relative, resolve, sep } from "node:path";
 
@@ -50,47 +58,11 @@ const saveConfig = (cwd: string, config: ContextFilesConfig): void => {
 	writeFileSync(path, `${JSON.stringify({ version: 1, disabledPaths: [...new Set(config.disabledPaths)].sort() }, null, 2)}\n`, "utf-8");
 };
 
-const loadContextFileFromDir = (dir: string): ContextFile | undefined => {
-	for (const filename of ["AGENTS.md", "CLAUDE.md"]) {
-		const path = join(dir, filename);
-		if (!existsSync(path)) continue;
-		try {
-			return {
-				path,
-				content: readFileSync(path, "utf-8"),
-			};
-		} catch {
-			return undefined;
-		}
-	}
-	return undefined;
-};
-
-const discoverContextFiles = (cwd: string, agentDir = getAgentDir()): ContextFile[] => {
-	const files: ContextFile[] = [];
-	const seen = new Set<string>();
-	const globalFile = loadContextFileFromDir(agentDir);
-	if (globalFile) {
-		files.push(globalFile);
-		seen.add(globalFile.path);
-	}
-	const ancestors: ContextFile[] = [];
-	let current = resolve(cwd);
-	const root = resolve(sep);
-	while (true) {
-		const contextFile = loadContextFileFromDir(current);
-		if (contextFile && !seen.has(contextFile.path)) {
-			ancestors.unshift(contextFile);
-			seen.add(contextFile.path);
-		}
-		if (current === root) break;
-		const parent = resolve(current, "..");
-		if (parent === current) break;
-		current = parent;
-	}
-	files.push(...ancestors);
-	return files;
-};
+const discoverContextFiles = (cwd: string, agentDir = getAgentDir()): ContextFile[] =>
+	loadProjectContextFiles({ cwd: resolve(cwd), agentDir: resolve(agentDir) }).map((file) => ({
+		path: file.path,
+		content: file.content,
+	}));
 
 const renderContextSection = (files: ContextFile[]): string => {
 	if (files.length === 0) return "";
