@@ -1,0 +1,23 @@
+docs/decisions-log.md
+  c4c80af8eb938dd2 336-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "b1cd25616c9574583860d428fb2580858250d62c",
+  "prompts": {
+    "c4c80af8eb938dd2": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019dac7d-97ec-7474-9cce-fd5fbaad1638",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Jonas Rohde",
+      "messages": [],
+      "total_additions": 18,
+      "total_deletions": 24,
+      "accepted_lines": 18,
+      "overriden_lines": 0
+    }
+  }
+}
