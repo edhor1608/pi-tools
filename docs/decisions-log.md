@@ -333,3 +333,45 @@ A companion message or on-demand readability view would be easier to implement, 
 
 ### Consequences
 `pi-tools` now has seven extensions total again. Assistant answers with many file references read more naturally, but this extension intentionally relies on Pi internals and may need updates when Pi changes its assistant markdown renderer.
+
+## 2026-04-23 Resolve Installed Pi Package Paths Dynamically
+
+### Context
+`structured-compaction` depended on private Pi and pi-ai files, but one part of that dependency was unnecessarily brittle: it hardcoded a Homebrew global install path under `/opt/homebrew/lib/node_modules/...`. That made the package machine-specific even when the private files themselves were still present in other install layouts.
+
+### Decision
+Resolve installed `@mariozechner/pi-ai` and `@mariozechner/pi-coding-agent` package roots dynamically via `import.meta.resolve(...)` and derive the private file paths relative to those package roots.
+
+### Rationale
+This keeps the current private-internal integration intact while removing the single-machine install-path assumption. The package still depends on Pi internals, but it now fails only when those internals actually move or disappear, not just because Pi was installed somewhere else.
+
+### Consequences
+`structured-compaction` remains a maintenance-risk surface, but it is now materially more portable across npm/global/project installs and different Node wrapper layouts.
+
+## 2026-04-23 Use `systemPromptOptions.contextFiles` In Context Files Filtering
+
+### Context
+`context-files` previously re-discovered AGENTS/CLAUDE files during `before_agent_start` even when Pi had already computed the exact context-file list for the current turn. That meant the extension could drift from Pi core whenever context files came from non-discovery paths or when discovery rules changed.
+
+### Decision
+Prefer `event.systemPromptOptions.contextFiles` when Pi provides it during `before_agent_start`, and keep `loadProjectContextFiles()` only as a compatibility fallback for older Pi versions.
+
+### Rationale
+This makes prompt filtering track the exact context files Pi is already using for the current turn, including newer loader behavior and non-discovery sources, while still keeping the package compatible with the current local `0.67.68` runtime.
+
+### Consequences
+`context-files` is now better aligned with Pi core on newer versions without giving up backward compatibility.
+
+## 2026-04-23 Add Native Working Indicator To Notify
+
+### Context
+`notify` already used terminal-title animation and terminal notifications, but newer Pi versions expose a native in-app streaming indicator via `ctx.ui.setWorkingIndicator()`.
+
+### Decision
+Use `ctx.ui.setWorkingIndicator()` when available to show a small in-app working marker during active agent runs, while keeping the existing title animation and ready/question/error notifications.
+
+### Rationale
+This adds native in-app feedback with very little code and without replacing the existing notify behavior. A compatibility guard keeps the extension safe on older Pi versions that do not expose the method.
+
+### Consequences
+On newer Pi versions, `notify` no longer relies only on title-bar animation for active-work feedback. On older versions, behavior remains unchanged.

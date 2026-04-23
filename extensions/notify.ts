@@ -5,6 +5,12 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { classifyAgentEndState, type AgentEndClassification } from "./shared/agent-end-state.ts";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const WORKING_INDICATOR_FRAME = "●";
+
+interface WorkingIndicatorOptions {
+	frames: string[];
+	intervalMs?: number;
+}
 
 type NotifyKind = "ready" | "question" | "error" | "queued" | "stopped";
 
@@ -114,6 +120,14 @@ export function classifyAgentEnd(messages: AgentMessage[], hasPendingMessages = 
 	return toNotifyOutcome(classifyAgentEndState(messages, { hasPendingMessages }));
 }
 
+function setWorkingIndicator(ctx: ExtensionContext, active: boolean) {
+	if (!ctx.hasUI) return;
+	const ui = ctx.ui as typeof ctx.ui & {
+		setWorkingIndicator?: (options?: WorkingIndicatorOptions) => void;
+	};
+	ui.setWorkingIndicator?.(active ? { frames: [ui.theme.fg("accent", WORKING_INDICATOR_FRAME)] } : undefined);
+}
+
 function stopAnimation(ctx: ExtensionContext, pi: ExtensionAPI, prefix?: string) {
 	ctx.ui.setTitle(prefix ? `${prefix} ${getBaseTitle(pi)}` : getBaseTitle(pi));
 }
@@ -141,16 +155,19 @@ export default function notifyExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
+		setWorkingIndicator(ctx, false);
 		stopAnimation(ctx, pi);
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
+		setWorkingIndicator(ctx, true);
 		startAnimation(ctx);
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
 		stopTimer();
 		if (!ctx.hasUI) return;
+		setWorkingIndicator(ctx, false);
 		const outcome = classifyAgentEnd(event.messages, ctx.hasPendingMessages());
 		stopAnimation(ctx, pi, outcome.titlePrefix);
 		if (outcome.kind === "queued" || outcome.kind === "stopped") return;
@@ -160,6 +177,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		stopTimer();
 		if (!ctx.hasUI) return;
+		setWorkingIndicator(ctx, false);
 		stopAnimation(ctx, pi);
 	});
 }
