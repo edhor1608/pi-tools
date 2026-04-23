@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model } from "@mariozechner/pi-ai";
@@ -11,8 +12,24 @@ import type {
 	StructuredRemoteReplacement,
 } from "./types.ts";
 
-const RESPONSES_SHARED_MODULE_PATH =
-	"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+const findPackageRoot = (moduleUrl: string): string | undefined => {
+	let current = dirname(fileURLToPath(new URL(moduleUrl)));
+	while (true) {
+		if (existsSync(join(current, "package.json"))) return current;
+		const parent = dirname(current);
+		if (parent === current) return undefined;
+		current = parent;
+	}
+};
+
+const PI_AI_PACKAGE_ROOT = findPackageRoot(await import.meta.resolve("@mariozechner/pi-ai"));
+const PI_CODING_AGENT_PACKAGE_ROOT = findPackageRoot(await import.meta.resolve("@mariozechner/pi-coding-agent"));
+const RESPONSES_SHARED_MODULE_PATH = PI_AI_PACKAGE_ROOT
+	? join(PI_AI_PACKAGE_ROOT, "dist", "providers", "openai-responses-shared.js")
+	: undefined;
+const PI_CODING_AGENT_PACKAGE_JSON_PATH = PI_CODING_AGENT_PACKAGE_ROOT
+	? join(PI_CODING_AGENT_PACKAGE_ROOT, "package.json")
+	: undefined;
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -31,6 +48,9 @@ type ResponsesSharedModule = {
 let responsesSharedModulePromise: Promise<ResponsesSharedModule> | undefined;
 
 const loadResponsesSharedModule = async (): Promise<ResponsesSharedModule> => {
+	if (!RESPONSES_SHARED_MODULE_PATH) {
+		throw new Error("Could not resolve installed @mariozechner/pi-ai package root");
+	}
 	responsesSharedModulePromise ||= import(pathToFileURL(RESPONSES_SHARED_MODULE_PATH).href) as Promise<ResponsesSharedModule>;
 	return responsesSharedModulePromise;
 };
@@ -100,13 +120,9 @@ const extractCodexAccountId = (token: string): string | undefined => {
 };
 
 const buildUserAgent = (): string => {
+	if (!PI_CODING_AGENT_PACKAGE_JSON_PATH) return "pi-structured-compaction";
 	try {
-		const packageJson = JSON.parse(
-			readFileSync(
-				"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/package.json",
-				"utf8",
-			),
-		) as { version?: string };
+		const packageJson = JSON.parse(readFileSync(PI_CODING_AGENT_PACKAGE_JSON_PATH, "utf8")) as { version?: string };
 		const version = packageJson.version || "unknown";
 		return `pi-structured-compaction/${version}`;
 	} catch {

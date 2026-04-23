@@ -20,6 +20,7 @@ mkdirSync(join(repo, ".pi"), { recursive: true });
 const globalPath = join(agentDir, "AGENTS.md");
 const workspacePath = join(workspace, "AGENTS.md");
 const repoPath = join(repo, "AGENTS.md");
+const virtualPath = join(repo, "virtual-context.md");
 
 writeFileSync(globalPath, "GLOBAL RULES\n", "utf-8");
 writeFileSync(workspacePath, "WORKSPACE RULES\n", "utf-8");
@@ -79,6 +80,38 @@ if (!filteredPrompt.includes("# Project Context")) {
 
 writeFileSync(
 	join(repo, ".pi", "context-files.json"),
+	`${JSON.stringify({ version: 1, disabledPaths: [globalPath, virtualPath] }, null, 2)}\n`,
+	"utf-8",
+);
+const providedContextFiles = [
+	{ path: globalPath, content: "GLOBAL RULES\n" },
+	{ path: workspacePath, content: "WORKSPACE RULES\n" },
+	{ path: virtualPath, content: "VIRTUAL RULES\n" },
+];
+const providedPrompt = buildSystemPrompt({
+	cwd: repo,
+	contextFiles: providedContextFiles,
+	selectedTools: ["read", "bash", "edit", "write"],
+	toolSnippets: {
+		read: "Read files",
+		bash: "Run shell commands",
+		edit: "Edit files",
+		write: "Write files",
+	},
+});
+const filteredProvidedPrompt = filterSystemPrompt(providedPrompt, repo, agentDir, providedContextFiles);
+if (filteredProvidedPrompt.includes("GLOBAL RULES") || filteredProvidedPrompt.includes("VIRTUAL RULES")) {
+	throw new Error("disabled provided context files should be removed from the final system prompt");
+}
+if (!filteredProvidedPrompt.includes("WORKSPACE RULES")) {
+	throw new Error("enabled provided context files should remain in the final system prompt");
+}
+if (filteredProvidedPrompt.includes("PROJECT RULES")) {
+	throw new Error("provided context files should be used directly instead of rediscovering project files");
+}
+
+writeFileSync(
+	join(repo, ".pi", "context-files.json"),
 	`${JSON.stringify({ version: 1, disabledPaths: [globalPath, workspacePath, repoPath] }, null, 2)}\n`,
 	"utf-8",
 );
@@ -104,6 +137,9 @@ console.log(
 			filteredHasWorkspace: filteredPrompt.includes("WORKSPACE RULES"),
 			filteredHasProject: filteredPrompt.includes("PROJECT RULES"),
 			filteredHasGlobal: filteredPrompt.includes("GLOBAL RULES"),
+			filteredProvidedHasWorkspace: filteredProvidedPrompt.includes("WORKSPACE RULES"),
+			filteredProvidedHasProject: filteredProvidedPrompt.includes("PROJECT RULES"),
+			filteredProvidedHasVirtual: filteredProvidedPrompt.includes("VIRTUAL RULES"),
 			emptyContextHasSection: emptyContextPrompt.includes("# Project Context"),
 		},
 		null,
