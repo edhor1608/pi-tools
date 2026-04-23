@@ -333,3 +333,21 @@ A companion message or on-demand readability view would be easier to implement, 
 
 ### Consequences
 `pi-tools` now has seven extensions total again. Assistant answers with many file references read more naturally, but this extension intentionally relies on Pi internals and may need updates when Pi changes its assistant markdown renderer.
+
+## 2026-04-20 Pi-Native GPT-5.4 Prompt Overlay
+
+### Context
+The `gpt-5.4` system prompt overlay was copied from a Codex-oriented harness prompt and still contained Codex-specific jargon and tool steering, including output channel language, `multi_tool_use.parallel`, shell-first search guidance, and a frontend-design section that does not belong to Pi's native prompt model.
+
+### Decision
+Trim the overlay down by removing sections and bullets that depend on Codex-specific runtime concepts instead of adapting them literally:
+- delete the `# Working with the user` section that describes `commentary` and `final` channels
+- remove the leftover `commentary` line under intermediary updates
+- remove the `rg` / `multi_tool_use.parallel` search-and-parallelization bullets
+- delete the `## Frontend tasks` section
+
+### Rationale
+Pi already injects its own tool-native exploration guidance based on the actual tool set, and Pi does not expose Codex-style output channels as a first-class prompt concept. Keeping those sections would add false or duplicate steering instead of useful Pi-native behavior.
+
+### Consequences
+The `gpt-5.4` overlay now relies more on Pi core for tool and runtime semantics and keeps only the prompt shaping that is still relevant across harnesses. Future prompt adaptation work should treat Codex-runtime concepts as removable unless Pi exposes an equivalent concept directly.
