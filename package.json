@@ -47,6 +47,7 @@
     "test:stash-release": "bun ./scripts/test-stash-release.ts",
     "test:context-files": "bun ./scripts/test-context-files.ts",
     "test:file-footnotes": "bun ./scripts/test-file-footnotes.ts",
+    "test:model-system-prompt-defaults": "bun ./scripts/test-model-system-prompt-defaults.ts",
     "test:notify": "bun ./scripts/test-notify.ts",
     "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts",
     "test:structured-compaction-paths": "bun ./scripts/test-structured-compaction-paths.ts"

@@ -14,7 +14,7 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
 Pi version baseline: this repo is currently runtime-validated against local Pi `0.67.68`.
-The `0.68.0` through `0.69.0` changelog gap was reviewed on `2026-04-23`, and the repo-impact fixes from that review are captured in [docs/pi-version-notes.md](docs/pi-version-notes.md).
+The `0.68.0` through `0.70.2` changelog gap was reviewed on `2026-04-25`, and the repo-impact changes from that review are captured in [docs/pi-version-notes.md](docs/pi-version-notes.md).
 
 ## What Problem This Solves
 
@@ -74,6 +74,7 @@ Why that is nice:
 In short: keep Pi's base prompt, then add the small model-specific steering each model benefits from.
 
 Seeded defaults currently include:
+- `openai-codex/gpt-5.5`
 - `openai-codex/gpt-5.4`
 - `openai-codex/gpt-5.3-codex`
 - `openai-codex/gpt-5.3-codex-spark`
