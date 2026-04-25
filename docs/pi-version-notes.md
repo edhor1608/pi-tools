@@ -2,13 +2,13 @@
 
 This repo is currently runtime-validated against local Pi `0.67.68`.
 
-The `0.68.0` through `0.69.0` changelog gap was reviewed on `2026-04-23`.
+The `0.68.0` through `0.70.2` changelog gap was reviewed on `2026-04-25`.
 This note records the repo-impact changes from that review and keeps the remaining upgrade risks explicit.
 
 Source used for this review:
 - upstream `packages/coding-agent/CHANGELOG.md`
 - local installed Pi `0.67.68`
-- published `@mariozechner/pi-coding-agent@0.69.0` and `@mariozechner/pi-ai@0.69.0` tarballs
+- published `@mariozechner/pi-coding-agent@0.70.2` and `@mariozechner/pi-ai@0.70.2` tarballs
 
 ## Applied Repo-Impact Fixes
 
@@ -70,6 +70,20 @@ Why it matters:
 Repo surfaces:
 - `extensions/notify.ts`
 - `scripts/test-notify.ts`
+
+### GPT-5.5 Codex Prompt Coverage
+
+What changed in this repo:
+- seeded model-system-prompt defaults now include `openai-codex/gpt-5.5.md`
+- the initial `gpt-5.5` file reuses the current GPT-5 Codex family prompt text already used for `gpt-5.4`
+
+Why it matters:
+- Pi `0.70.0` adds built-in `openai-codex/gpt-5.5` support
+- this package can now steer that new default Codex model without requiring manual prompt-file bootstrapping first
+
+Repo surfaces:
+- `defaults/model-system-prompts/openai-codex/gpt-5.5.md`
+- `scripts/test-model-system-prompt-defaults.ts`
 
 ## Relevant 0.67.x Changes Already Adopted
 
@@ -134,7 +148,7 @@ Repo surfaces:
 - `extensions/context-health.ts`
 - `scripts/test-context-health.ts`
 
-## Reviewed 0.68.0 -> 0.69.0 Changes
+## Reviewed 0.68.0 -> 0.70.2 Changes
 
 ### Explicit `cwd` / `agentDir` Resource Helpers
 
@@ -201,15 +215,33 @@ Impact here:
 - this package currently does not define custom tool schemas
 - if custom tools are added later, they should use `typebox` and list it in `peerDependencies`
 
-### Private Internal Surfaces Still Present In 0.69.0
+### 0.70.x Additions And Impact
+
+Relevant versions:
+- `0.70.0`
+- `0.70.1`
+- `0.70.2`
+
+What changed upstream:
+- Pi now includes built-in `openai-codex/gpt-5.5` support
+- terminal progress indicators are opt-in instead of default-on
+- provider retry settings gained provider-side timeout and retry controls
+- DeepSeek was added as a built-in provider
+
+Impact here:
+- the only package-level follow-up worth taking immediately was GPT-5.5 Codex prompt coverage, which is now seeded
+- `notify` is not affected by the OSC 9;4 default change because it relies on title updates and Pi's in-app working indicator, not terminal progress reporting
+- the new provider retry controls and DeepSeek provider support do not require repo changes right now
+
+### Private Internal Surfaces Still Present In 0.70.2
 
 What was checked:
-- published `0.69.0` tarballs still include the private files this repo currently depends on
+- published `0.70.2` tarballs still include the private files this repo currently depends on
 - that includes the interactive assistant-message renderer used by `file-footnotes`
 - that also includes `pi-ai`'s `openai-responses-shared.js` used by structured compaction
 
 Why it matters:
-- there is no confirmed `0.69.0` blocker from private-file removal
+- there is no confirmed `0.70.2` blocker from private-file removal
 - the risk remains maintenance drift, not immediate absence
 
 ## Suggested Rechecks For The Next Pi Upgrade
@@ -224,7 +256,7 @@ Re-check these areas first:
 
 Current state:
 - runtime-validated baseline: `0.67.68`
-- changelog reviewed through: `0.69.0`
+- changelog reviewed through: `0.70.2`
 - repo-impact fixes from that review: applied
 
 There is no confirmed blocker to upgrading from the perspective of this package.

@@ -375,3 +375,17 @@ This adds native in-app feedback with very little code and without replacing the
 
 ### Consequences
 On newer Pi versions, `notify` no longer relies only on title-bar animation for active-work feedback. On older versions, behavior remains unchanged.
+
+## 2026-04-25 Seed GPT-5.5 Codex Prompt Coverage
+
+### Context
+Pi `0.70.0` added built-in `openai-codex/gpt-5.5` support. This package already shipped seeded prompt coverage for the nearby GPT-5 Codex family, but not for the new default Codex model id.
+
+### Decision
+Add `defaults/model-system-prompts/openai-codex/gpt-5.5.md` and seed it with the same current GPT-5 Codex family prompt text already used for `gpt-5.4`.
+
+### Rationale
+This gives the new built-in Codex model immediate prompt coverage without requiring manual setup, while staying conservative: the seeded file simply extends the same GPT-5 Codex family prompt text already in use instead of inventing a new model-specific variant.
+
+### Consequences
+Newer Pi installs that default to or switch to `openai-codex/gpt-5.5` can use the package's model-system-prompt defaults immediately.
