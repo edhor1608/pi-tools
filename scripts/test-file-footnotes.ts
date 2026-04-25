@@ -181,10 +181,12 @@ const encodedCommand = createCommandContext([
 ]);
 await fileFootnotesCommand!("vscode 1", encodedCommand.ctx);
 const codeCall = execCalls.find((call) => call.command === "code");
-const openCall = execCalls.find((call) => call.command === "open");
+const expectedFallbackCommand = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+const fallbackOpenCall = execCalls.find((call) => call.command === expectedFallbackCommand);
+const fallbackUri = process.platform === "win32" ? fallbackOpenCall?.args.at(-1) : fallbackOpenCall?.args[0];
 assert(codeCall && codeCall.args[0] === "/Users/jonas/My Folder/file#name.ts", "expected VS Code fallback to try the decoded filesystem path first");
 assert(
-	openCall && openCall.args[0] === "vscode://file//Users/jonas/My%20Folder/file%23name.ts",
+	fallbackOpenCall && fallbackUri === "vscode://file//Users/jonas/My%20Folder/file%23name.ts",
 	"expected VS Code fallback URI to keep path encoding intact",
 );
 assert(
