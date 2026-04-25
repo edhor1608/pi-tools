@@ -382,10 +382,10 @@ On newer Pi versions, `notify` no longer relies only on title-bar animation for 
 Pi `0.70.0` added built-in `openai-codex/gpt-5.5` support. This package already shipped seeded prompt coverage for the nearby GPT-5 Codex family, but not for the new default Codex model id.
 
 ### Decision
-Add `defaults/model-system-prompts/openai-codex/gpt-5.5.md` and seed it with the same current GPT-5 Codex family prompt text already used for `gpt-5.4`.
+Add `defaults/model-system-prompts/openai-codex/gpt-5.5.md` and seed it from the current GPT-5 Codex family prompt text already used for `gpt-5.4`, while keeping a small wording cleanup in the file-reference rules specific to `gpt-5.5`.
 
 ### Rationale
-This gives the new built-in Codex model immediate prompt coverage without requiring manual setup, while staying conservative: the seeded file simply extends the same GPT-5 Codex family prompt text already in use instead of inventing a new model-specific variant.
+This gives the new built-in Codex model immediate prompt coverage without requiring manual setup, while staying conservative: the seeded file stays aligned with the current GPT-5 Codex family prompt instead of inventing a broader model-specific variant, but it can still carry small wording cleanups where they improve clarity.
 
 ### Consequences
 Newer Pi installs that default to or switch to `openai-codex/gpt-5.5` can use the package's model-system-prompt defaults immediately.

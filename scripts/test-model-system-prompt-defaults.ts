@@ -15,9 +15,21 @@ assert(existsSync(gpt55Path), "expected seeded gpt-5.5 prompt file");
 const gpt54 = readFileSync(gpt54Path, "utf8").trim();
 const gpt55 = readFileSync(gpt55Path, "utf8").trim();
 
+const normalizeSharedPrompt = (value: string): string =>
+	value
+		.replace("Use markdown links (not inline code) for clickable file paths.", "__FILE_LINKS__")
+		.replace("Use Markdown links (not inline code) for clickable file paths.", "__FILE_LINKS__")
+		.replace("Each reference should have a stand alone path. Even if it's the same file.", "__FILE_PATH__")
+		.replace("Each reference should have a standalone path, even if it's the same file.", "__FILE_PATH__");
+
 assert(gpt54.length > 0, "expected non-empty seeded gpt-5.4 prompt");
 assert(gpt55.length > 0, "expected non-empty seeded gpt-5.5 prompt");
-assert(gpt54 === gpt55, "expected gpt-5.5 seeded prompt coverage to match the current GPT-5 Codex family prompt text");
+assert(gpt55.includes("Use Markdown links (not inline code) for clickable file paths."), "expected gpt-5.5 to keep the cleaned-up Markdown wording");
+assert(gpt55.includes("Each reference should have a standalone path, even if it's the same file."), "expected gpt-5.5 to keep the cleaned-up standalone-path wording");
+assert(
+	normalizeSharedPrompt(gpt54) === normalizeSharedPrompt(gpt55),
+	"expected gpt-5.5 seeded prompt coverage to stay aligned with the GPT-5 Codex family prompt apart from the intentional file-reference wording cleanup",
+);
 
 console.log(
 	JSON.stringify(
@@ -25,7 +37,7 @@ console.log(
 			gpt54Path,
 			gpt55Path,
 			promptLength: gpt55.length,
-			matching: gpt54 === gpt55,
+			normalizedMatching: normalizeSharedPrompt(gpt54) === normalizeSharedPrompt(gpt55),
 		},
 		null,
 		2,

@@ -75,7 +75,7 @@ Repo surfaces:
 
 What changed in this repo:
 - seeded model-system-prompt defaults now include `openai-codex/gpt-5.5.md`
-- the initial `gpt-5.5` file reuses the current GPT-5 Codex family prompt text already used for `gpt-5.4`
+- the initial `gpt-5.5` file starts from the current GPT-5 Codex family prompt text already used for `gpt-5.4`, with a small wording cleanup in the file-reference rules
 
 Why it matters:
 - Pi `0.70.0` adds built-in `openai-codex/gpt-5.5` support

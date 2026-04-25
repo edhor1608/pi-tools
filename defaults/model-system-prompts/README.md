@@ -38,6 +38,6 @@ Examples:
 
 Source policy:
 - Only seed files from exact upstream prompt text when an upstream repo actually ships a dedicated prompt for that model family.
-- `openai-codex/gpt-5.5.md` currently reuses the same GPT-5 Codex family prompt text as `openai-codex/gpt-5.4.md`.
+- `openai-codex/gpt-5.5.md` starts from the same GPT-5 Codex family prompt text as `openai-codex/gpt-5.4.md`, with a small wording cleanup in the file-reference rules.
 - For OpenCode, `opencode-go/kimi-k2.5.md` is seeded from the exact text in OpenCode's dedicated `kimi.txt` prompt file.
 - GLM, Qwen, DeepSeek, Grok, and similar families are not seeded from OpenCode for now because the inspected OpenCode repo does not ship dedicated prompt files for them; they fall back to OpenCode's generic `default.txt`, which is intentionally not used here.
