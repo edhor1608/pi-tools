@@ -1,0 +1,31 @@
+docs/decisions-log.md
+  a0ab1be25587cb13 385,388
+scripts/test-model-system-prompt-defaults.ts
+  a0ab1be25587cb13 18-24,27-32,40
+defaults/model-system-prompts/README.md
+  a0ab1be25587cb13 41
+defaults/model-system-prompts/openai-codex/gpt-5.5.md
+  a0ab1be25587cb13 66-67
+docs/pi-version-notes.md
+  a0ab1be25587cb13 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "aac1557e121030034089caeb9034e8c490e57018",
+  "prompts": {
+    "a0ab1be25587cb13": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019dbbd0-c4b9-745b-9ba3-dd6188d08230",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Jonas Rohde",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 8,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    }
+  }
+}
