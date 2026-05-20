@@ -135,3 +135,65 @@ If this repo upgrades Pi beyond `0.67.6`, re-check these areas first:
 Pi `0.67.6` is now a validated baseline for this repo.
 
 The main remaining compatibility risk is still `file-footnotes`, not because non-file links drift from Pi core anymore, but because the extension still patches assistant-message rendering to add file-only footnotes and collapse behavior.
+
+## Reviewed 0.68.0 through 0.75.3 Changes
+
+Source used for this review:
+- upstream changelog entries through Pi `0.75.3`
+- local Pi package docs and installed package source under `@earendil-works/pi-coding-agent`
+
+### Package Scope Migration
+
+Relevant versions:
+- `0.74.0`
+- `0.73.1`
+
+What changed upstream:
+- Pi packages moved from `@mariozechner/*` to `@earendil-works/*`.
+
+What this repo changed:
+- package peer dependencies and extension imports now use `@earendil-works/*`.
+- README install instructions now use `@earendil-works/pi-coding-agent`.
+
+Repo surfaces:
+- `package.json`
+- `extensions/**`
+- `scripts/**`
+- `README.md`
+
+### Project Context XML Boundaries
+
+Relevant version:
+- `0.75.0`
+
+What changed upstream:
+- Pi project-context boundaries can use explicit XML tags instead of only Markdown headings.
+
+What this repo changed:
+- `context-files` now supports both the older Markdown `# Project Context` section and the newer `<project_context>` section.
+- filtering now receives `event.systemPromptOptions.contextFiles` during `before_agent_start` so it tracks Pi's loaded context files directly.
+
+Repo surfaces:
+- `extensions/context-files.ts`
+- `scripts/test-context-files.ts`
+
+### Structured Compaction Internal Path Removal
+
+Relevant versions:
+- `0.74.0`
+- `0.75.0`
+
+What changed upstream:
+- package scopes and install layouts changed, including user-scoped npm package locations.
+
+What this repo changed:
+- `structured-compaction` no longer hardcodes the old Homebrew/global `@mariozechner/pi-coding-agent` path to reach OpenAI Responses conversion internals.
+- it now resolves the exported `@earendil-works/pi-ai/openai-responses` module and imports the sibling shared conversion module from there.
+
+Repo surfaces:
+- `extensions/structured-compaction/responses-adapter.ts`
+
+### Still Needs Runtime Revalidation
+
+- `file-footnotes` still monkey-patches `@earendil-works/pi-tui` Markdown internals and should be smoke-tested after TUI markdown rendering changes in `0.74.1`.
+- `structured-compaction` `codex-remote` should be tested against the current OpenAI Codex model list and compact endpoint behavior.

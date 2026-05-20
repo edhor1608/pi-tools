@@ -1,10 +1,10 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getCapabilities, hyperlink, Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getCapabilities, hyperlink, Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
+const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
 const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
 const { AssistantMessageComponent } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,

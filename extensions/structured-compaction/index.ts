@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { createStructuredCompactionArtifact, computeFileLists, getLatestStructuredCompactionArtifact } from "./artifact.ts";
 import { runStructuredCompactionBackend } from "./backend.ts";
 import {

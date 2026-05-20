@@ -7,15 +7,17 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { Container, SettingsList, Text, type SettingItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Container, SettingsList, Text, type SettingItem } from "@earendil-works/pi-tui";
 import { join, relative, resolve, sep } from "node:path";
 
 const STATUS_KEY = "context-files";
 const CONFIG_PATH = [".pi", "context-files.json"] as const;
 const ENABLED_VALUE = "✓ enabled";
 const DISABLED_VALUE = "× disabled";
-const CONTEXT_SECTION_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
+const MARKDOWN_CONTEXT_SECTION_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
+const XML_CONTEXT_SECTION_START = "\n\n<project_context>\n\n";
+const XML_CONTEXT_SECTION_END = "</project_context>\n";
 const SKILLS_SECTION_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
 const DATE_MARKER = "\nCurrent date: ";
 
@@ -64,15 +66,25 @@ const discoverContextFiles = (cwd: string, agentDir = getAgentDir()): ContextFil
 		content: file.content,
 	}));
 
-const renderContextSection = (files: ContextFile[]): string => {
+const renderMarkdownContextSection = (files: ContextFile[]): string => {
 	if (files.length === 0) return "";
-	return `${CONTEXT_SECTION_HEADER}${files.map((file) => `## ${file.path}\n\n${file.content.replace(/\n+$/g, "")}\n\n`).join("")}`;
+	return `${MARKDOWN_CONTEXT_SECTION_HEADER}${files.map((file) => `## ${file.path}\n\n${file.content.replace(/\n+$/g, "")}\n\n`).join("")}`;
 };
 
-const findContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
-	const start = systemPrompt.indexOf(CONTEXT_SECTION_HEADER);
+const escapeXmlAttribute = (value: string): string =>
+	value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char] ?? char);
+
+const renderXmlContextSection = (files: ContextFile[]): string => {
+	if (files.length === 0) return "";
+	return `${XML_CONTEXT_SECTION_START}Project-specific instructions and guidelines:\n\n${files
+		.map((file) => `<project_instructions path="${escapeXmlAttribute(file.path)}">\n${file.content.replace(/\n+$/g, "")}\n</project_instructions>\n\n`)
+		.join("")}${XML_CONTEXT_SECTION_END}`;
+};
+
+const findMarkdownContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
+	const start = systemPrompt.indexOf(MARKDOWN_CONTEXT_SECTION_HEADER);
 	if (start === -1) return undefined;
-	const searchFrom = start + CONTEXT_SECTION_HEADER.length;
+	const searchFrom = start + MARKDOWN_CONTEXT_SECTION_HEADER.length;
 	const skillStart = systemPrompt.indexOf(SKILLS_SECTION_HEADER, searchFrom);
 	const dateStart = systemPrompt.indexOf(DATE_MARKER, searchFrom);
 	let end = systemPrompt.length;
@@ -81,24 +93,45 @@ const findContextSectionRange = (systemPrompt: string): { start: number; end: nu
 	return { start, end };
 };
 
-const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], enabledFiles: ContextFile[]): string => {
-	const originalSection = renderContextSection(allFiles);
-	const filteredSection = renderContextSection(enabledFiles);
-	if (originalSection.length > 0) {
-		const exactStart = systemPrompt.indexOf(originalSection);
-		if (exactStart !== -1) {
-			return `${systemPrompt.slice(0, exactStart)}${filteredSection}${systemPrompt.slice(exactStart + originalSection.length)}`;
-		}
-	}
-	const range = findContextSectionRange(systemPrompt);
-	if (!range) return systemPrompt;
-	return `${systemPrompt.slice(0, range.start)}${filteredSection}${systemPrompt.slice(range.end)}`;
+const findXmlContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
+	const start = systemPrompt.indexOf(XML_CONTEXT_SECTION_START);
+	if (start === -1) return undefined;
+	const searchFrom = start + XML_CONTEXT_SECTION_START.length;
+	const skillStart = systemPrompt.indexOf(SKILLS_SECTION_HEADER, searchFrom);
+	const dateStart = systemPrompt.indexOf(DATE_MARKER, searchFrom);
+	let boundEnd = systemPrompt.length;
+	if (skillStart !== -1) boundEnd = skillStart;
+	if (dateStart !== -1 && dateStart < boundEnd) boundEnd = dateStart;
+	const closeStart = systemPrompt.lastIndexOf(XML_CONTEXT_SECTION_END, boundEnd);
+	if (closeStart < searchFrom) return undefined;
+	return { start, end: closeStart + XML_CONTEXT_SECTION_END.length };
 };
 
-const filterSystemPrompt = (systemPrompt: string, cwd: string, agentDir = getAgentDir()): string => {
+const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], enabledFiles: ContextFile[]): string => {
+	const candidates = [
+		{ original: renderXmlContextSection(allFiles), filtered: renderXmlContextSection(enabledFiles), range: findXmlContextSectionRange(systemPrompt) },
+		{ original: renderMarkdownContextSection(allFiles), filtered: renderMarkdownContextSection(enabledFiles), range: findMarkdownContextSectionRange(systemPrompt) },
+	];
+	for (const candidate of candidates) {
+		if (candidate.original.length > 0) {
+			const exactStart = systemPrompt.indexOf(candidate.original);
+			if (exactStart !== -1) {
+				return `${systemPrompt.slice(0, exactStart)}${candidate.filtered}${systemPrompt.slice(exactStart + candidate.original.length)}`;
+			}
+		}
+	}
+	const rangedCandidates = candidates.filter(
+		(candidate): candidate is (typeof candidates)[number] & { range: { start: number; end: number } } => candidate.range !== undefined,
+	);
+	const earliest = rangedCandidates.sort((a, b) => a.range.start - b.range.start)[0];
+	if (earliest?.range) return `${systemPrompt.slice(0, earliest.range.start)}${earliest.filtered}${systemPrompt.slice(earliest.range.end)}`;
+	return systemPrompt;
+};
+
+const filterSystemPrompt = (systemPrompt: string, cwd: string, agentDir = getAgentDir(), contextFiles?: ContextFile[]): string => {
 	const config = loadConfig(cwd);
 	if (config.disabledPaths.length === 0) return systemPrompt;
-	const files = discoverContextFiles(cwd, agentDir);
+	const files = contextFiles ?? discoverContextFiles(cwd, agentDir);
 	if (files.length === 0) return systemPrompt;
 	const disabled = new Set(config.disabledPaths.map((path) => resolve(path)));
 	const enabledFiles = files.filter((file) => !disabled.has(resolve(file.path)));
@@ -225,7 +258,7 @@ export { discoverContextFiles, filterSystemPrompt };
 
 export default function contextFilesExtension(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx) => {
-		const filtered = filterSystemPrompt(event.systemPrompt, ctx.cwd);
+		const filtered = filterSystemPrompt(event.systemPrompt, ctx.cwd, getAgentDir(), event.systemPromptOptions.contextFiles);
 		return filtered === event.systemPrompt ? undefined : { systemPrompt: filtered };
 	});
 
