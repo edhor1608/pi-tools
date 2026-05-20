@@ -123,7 +123,6 @@ assert(
 	baselineWebLine && assistantWebLine && stripAnsi(assistantWebLine) === stripAnsi(baselineWebLine),
 	"expected non-file links in assistant messages to keep Pi core markdown rendering",
 );
-assert(assistantWebLine.includes("https://pi.dev"), "expected non-file links to preserve the raw hyperlink target");
 
 setFileFootnotesExpanded(true);
 

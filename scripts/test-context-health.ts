@@ -21,14 +21,19 @@ const api = {
 	sendMessage(message: any) {
 		sentMessages.push(message);
 	},
+	getThinkingLevel() {
+		return "medium";
+	},
 } as any;
 
 contextHealthExtension(api);
 
 const command = commands.get("context-health")?.handler;
 const afterProviderResponse = handlers.get("after_provider_response")?.[0];
+const thinkingLevelSelect = handlers.get("thinking_level_select")?.[0];
 assert(command, "expected /context-health command to register");
 assert(afterProviderResponse, "expected after_provider_response handler to register");
+assert(thinkingLevelSelect, "expected thinking_level_select handler to register");
 
 const branch = [
 	{
@@ -61,7 +66,22 @@ const ctx = {
 		isUsingOAuth: () => false,
 	},
 	getContextUsage: () => ({ percent: 12.5, contextWindow: 200000 }),
+	ui: {
+		theme: {
+			fg: (_color: string, text: string) => text,
+		},
+		setStatus(_key: string, _value: string) {},
+	},
 };
+
+await handlers.get("session_start")?.[0]?.({}, ctx);
+sentMessages.length = 0;
+await command("", ctx);
+const initialMessage = sentMessages.at(-1);
+assert(initialMessage, "expected /context-health to send a message after session_start");
+assert(String(initialMessage.content).includes("- thinking level: medium"), "expected initial thinking level to come from pi.getThinkingLevel()");
+
+await thinkingLevelSelect({ level: "high", previousLevel: "medium" }, ctx);
 
 await afterProviderResponse(
 	{
@@ -83,6 +103,7 @@ try {
 	const defaultMessage = sentMessages.at(-1);
 	assert(defaultMessage, "expected /context-health to send a message without provider debug enabled");
 	assert(!String(defaultMessage.content).includes("Provider Response Debug"), "expected provider response details to stay hidden by default");
+	assert(String(defaultMessage.content).includes("- thinking level: high"), "expected selected thinking level to be reported");
 
 	process.env.PI_TOOLS_CONTEXT_HEALTH_PROVIDER_DEBUG = "1";
 	sentMessages.length = 0;

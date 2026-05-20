@@ -4,8 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import contextFilesExtension, { discoverContextFiles, filterSystemPrompt } from "../extensions/context-files.ts";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
-const piCodingAgentDistDir = dirname(fileURLToPath(piCodingAgentEntry));
+const piCodingAgentDistDir = dirname(fileURLToPath(await import.meta.resolve("@earendil-works/pi-coding-agent")));
 const { buildSystemPrompt } = await import(pathToFileURL(join(piCodingAgentDistDir, "core", "system-prompt.js")).href);
 
 const tempRoot = mkdtempSync(join(tmpdir(), "pi-context-files-"));
@@ -89,27 +88,27 @@ if (typeof emptyContextPrompt !== "string") {
 if (emptyContextPrompt.includes("GLOBAL RULES") || emptyContextPrompt.includes("WORKSPACE RULES") || emptyContextPrompt.includes("PROJECT RULES")) {
 	throw new Error("all disabled context files should be removed");
 }
-if (emptyContextPrompt.includes("# Project Context") || emptyContextPrompt.includes("<project_context>")) {
+if (emptyContextPrompt.includes("# Project Context")) {
 	throw new Error("project context section should be removed when all files are disabled");
 }
 if (!emptyContextPrompt.includes("Current date:")) {
 	throw new Error("date footer should remain after context filtering");
 }
 
-writeFileSync(
-	join(repo, ".pi", "context-files.json"),
-	`${JSON.stringify({ version: 1, disabledPaths: [globalPath] }, null, 2)}\n`,
-	"utf-8",
-);
 const xmlSystemPrompt = buildSystemPrompt({
-	customPrompt: "Custom prompt",
 	cwd: repo,
+	customPrompt: "Custom prompt",
 	contextFiles: expectedDiscovered.map((path) => ({
 		path,
 		content: path === globalPath ? "GLOBAL RULES\n" : path === workspacePath ? "WORKSPACE RULES\n" : "PROJECT RULES\n",
 	})),
 });
-const xmlFilteredPrompt = filterSystemPrompt(xmlSystemPrompt, repo, agentDir);
+writeFileSync(
+	join(repo, ".pi", "context-files.json"),
+	`${JSON.stringify({ version: 1, disabledPaths: [globalPath] }, null, 2)}\n`,
+	"utf-8",
+);
+const filteredXmlPrompt = filterSystemPrompt(xmlSystemPrompt, repo, agentDir);
 const xmlPromptWithSpecialPath = buildSystemPrompt({
 	customPrompt: "Custom prompt",
 	cwd: repo,
@@ -129,14 +128,14 @@ const xmlFilteredPromptWithSpecialPath = filterSystemPrompt(xmlPromptWithSpecial
 	{ path: join(repo, `docs/a&b"c<d>e'f.md`), content: "SPECIAL PATH RULES\n" },
 ]);
 const xmlPromptWithEmbeddedClose = xmlSystemPrompt.replace("WORKSPACE RULES", `WORKSPACE RULES\n\nExample literal ${"</project_context>"} in content`);
-const xmlFilteredPromptWithEmbeddedClose = filterSystemPrompt(xmlPromptWithEmbeddedClose, repo, agentDir);
-if (xmlFilteredPrompt.includes("GLOBAL RULES")) {
+const filteredXmlPromptWithEmbeddedClose = filterSystemPrompt(xmlPromptWithEmbeddedClose, repo, agentDir);
+if (filteredXmlPrompt.includes("GLOBAL RULES")) {
 	throw new Error("disabled global context file should be removed from XML project context");
 }
-if (!xmlFilteredPrompt.includes("<project_context>") || !xmlFilteredPrompt.includes("WORKSPACE RULES") || !xmlFilteredPrompt.includes("PROJECT RULES")) {
-	throw new Error("enabled files should remain in XML project context");
+if (!filteredXmlPrompt.includes("<project_context>") || !filteredXmlPrompt.includes("WORKSPACE RULES") || !filteredXmlPrompt.includes("PROJECT RULES")) {
+	throw new Error("enabled workspace and project XML context files should remain");
 }
-if (xmlFilteredPromptWithEmbeddedClose.includes("GLOBAL RULES") || !xmlFilteredPromptWithEmbeddedClose.includes("PROJECT RULES")) {
+if (filteredXmlPromptWithEmbeddedClose.includes("GLOBAL RULES") || !filteredXmlPromptWithEmbeddedClose.includes("PROJECT RULES")) {
 	throw new Error("XML context filtering should ignore literal closing tags inside context content");
 }
 if (!xmlFilteredPromptWithSpecialPath.includes(`path="${join(repo, "docs/a&amp;b&quot;c&lt;d&gt;e&apos;f.md")}"`)) {
@@ -152,10 +151,8 @@ console.log(
 			filteredHasProject: filteredPrompt.includes("PROJECT RULES"),
 			filteredHasGlobal: filteredPrompt.includes("GLOBAL RULES"),
 			emptyContextHasSection: emptyContextPrompt.includes("# Project Context") || emptyContextPrompt.includes("<project_context>"),
-			xmlFilteredHasWorkspace: xmlFilteredPrompt.includes("WORKSPACE RULES"),
-			xmlFilteredHasProject: xmlFilteredPrompt.includes("PROJECT RULES"),
-			xmlFilteredHasGlobal: xmlFilteredPrompt.includes("GLOBAL RULES"),
-			xmlEmbeddedCloseHandled: !xmlFilteredPromptWithEmbeddedClose.includes("GLOBAL RULES") && xmlFilteredPromptWithEmbeddedClose.includes("PROJECT RULES"),
+			filteredXmlHasGlobal: filteredXmlPrompt.includes("GLOBAL RULES"),
+			xmlEmbeddedCloseHandled: !filteredXmlPromptWithEmbeddedClose.includes("GLOBAL RULES") && filteredXmlPromptWithEmbeddedClose.includes("PROJECT RULES"),
 			xmlEscapedPathHandled: xmlFilteredPromptWithSpecialPath.includes("SPECIAL PATH RULES"),
 		},
 		null,

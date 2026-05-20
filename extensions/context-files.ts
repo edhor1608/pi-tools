@@ -111,7 +111,7 @@ const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], en
 	const candidates = [
 		{ original: renderXmlContextSection(allFiles), filtered: renderXmlContextSection(enabledFiles), range: findXmlContextSectionRange(systemPrompt) },
 		{ original: renderMarkdownContextSection(allFiles), filtered: renderMarkdownContextSection(enabledFiles), range: findMarkdownContextSectionRange(systemPrompt) },
-	];
+	] as const;
 	for (const candidate of candidates) {
 		if (candidate.original.length > 0) {
 			const exactStart = systemPrompt.indexOf(candidate.original);
