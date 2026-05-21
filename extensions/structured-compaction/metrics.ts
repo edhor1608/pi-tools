@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { buildSessionContext, type CompactionEntry, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { buildSessionContext, type CompactionEntry, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { StructuredCompactionArtifact } from "./types.ts";
 
 export interface StructuredCompactionMetrics {

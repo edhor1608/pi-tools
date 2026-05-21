@@ -1,10 +1,10 @@
 import fileFootnotesExtension, { setFileFootnotesExpanded } from "../extensions/file-footnotes.ts";
-import { initTheme } from "@mariozechner/pi-coding-agent";
-import { Markdown, setCapabilities } from "@mariozechner/pi-tui";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { Markdown, setCapabilities } from "@earendil-works/pi-tui";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
+const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
 const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
 const { AssistantMessageComponent } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,
@@ -119,7 +119,11 @@ const assistantWebOnly = new AssistantMessageComponent({
 	stopReason: "stop",
 });
 const assistantWebLine = assistantWebOnly.render(120).find((line) => stripAnsi(line).includes("Pi docs"));
-assert(baselineWebLine && assistantWebLine && assistantWebLine === baselineWebLine, "expected non-file links in assistant messages to keep Pi core markdown rendering");
+assert(
+	baselineWebLine && assistantWebLine && stripAnsi(assistantWebLine) === stripAnsi(baselineWebLine),
+	"expected non-file links in assistant messages to keep Pi core markdown rendering",
+);
+assert(assistantWebLine.includes("https://pi.dev"), "expected non-file links to preserve the raw hyperlink target");
 
 setFileFootnotesExpanded(true);
 
@@ -217,7 +221,7 @@ console.log(
 			worktreeLine,
 			collapsedSummary,
 			docsLine,
-			webLinkMatchesCore: assistantWebLine === baselineWebLine,
+			webLinkMatchesCore: stripAnsi(assistantWebLine ?? "") === stripAnsi(baselineWebLine ?? ""),
 			expandedHint,
 			readmeFootnote,
 			configFootnote,

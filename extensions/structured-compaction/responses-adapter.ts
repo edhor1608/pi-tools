@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
 import type {
 	JsonValue,
 	StructuredCompactionConfig,
@@ -11,8 +9,8 @@ import type {
 	StructuredRemoteReplacement,
 } from "./types.ts";
 
-const RESPONSES_SHARED_MODULE_PATH =
-	"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+const OPENAI_RESPONSES_MODULE = "@earendil-works/pi-ai/openai-responses";
+const OPENAI_RESPONSES_SHARED_MODULE = "./openai-responses-shared.js";
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -31,7 +29,9 @@ type ResponsesSharedModule = {
 let responsesSharedModulePromise: Promise<ResponsesSharedModule> | undefined;
 
 const loadResponsesSharedModule = async (): Promise<ResponsesSharedModule> => {
-	responsesSharedModulePromise ||= import(pathToFileURL(RESPONSES_SHARED_MODULE_PATH).href) as Promise<ResponsesSharedModule>;
+	responsesSharedModulePromise ||= import(
+		new URL(OPENAI_RESPONSES_SHARED_MODULE, import.meta.resolve(OPENAI_RESPONSES_MODULE)).href
+	) as Promise<ResponsesSharedModule>;
 	return responsesSharedModulePromise;
 };
 
@@ -99,20 +99,7 @@ const extractCodexAccountId = (token: string): string | undefined => {
 	return typeof accountId === "string" && accountId.length > 0 ? accountId : undefined;
 };
 
-const buildUserAgent = (): string => {
-	try {
-		const packageJson = JSON.parse(
-			readFileSync(
-				"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/package.json",
-				"utf8",
-			),
-		) as { version?: string };
-		const version = packageJson.version || "unknown";
-		return `pi-structured-compaction/${version}`;
-	} catch {
-		return "pi-structured-compaction";
-	}
-};
+const buildUserAgent = (): string => "pi-structured-compaction";
 
 const buildRemoteHeaders = (
 	model: Model<any>,

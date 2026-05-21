@@ -311,7 +311,7 @@ Add a separate `context-files` extension that:
 - re-discovers the same AGENTS.md and CLAUDE.md files Pi core would load for the current cwd
 - stores a project-local disabled-path list in `.pi/context-files.json`
 - exposes `/context-files` as an interactive toggle UI
-- filters disabled files out of the final `# Project Context` section in `before_agent_start`
+- filters disabled files out of Pi's final project-context section in `before_agent_start`
 - leaves Pi core discovery untouched, which means the startup context list still reflects discovery rather than extension-side filtering
 
 ### Rationale
