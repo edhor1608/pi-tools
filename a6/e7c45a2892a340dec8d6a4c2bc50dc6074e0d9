@@ -1,0 +1,24 @@
+package.json
+  s_20273104c50f0c::t_dca052910faa83 56-59
+extensions/context-files.ts
+  s_20273104c50f0c::t_3b692a3f6079e0 123-126
+  s_20273104c50f0c::t_dca052910faa83 74-80,127
+scripts/test-context-files.ts
+  s_20273104c50f0c::t_e8192552c7f20f 113-145,154-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "a6e7c45a2892a340dec8d6a4c2bc50dc6074e0d9",
+  "prompts": {},
+  "sessions": {
+    "s_20273104c50f0c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e4574-61e0-7291-99a9-475aaa9ba393",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Jonas Rohde <edhor.jonas@gmail.com>"
+    }
+  }
+}
