@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-05-20 Agent Skill Tracker Setup
+
+### Context
+
+The repo needs per-repo configuration for Matt Pocock's engineering skills before using `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out`. Existing work is tracked in Linear, but not yet in the intended structure.
+
+### Decision
+
+Document Linear as the issue tracker: Linear Documents hold durable planning and research artifacts, while Linear Issues and Subissues hold executable work. Use `AFK` for `ready-for-agent`, `HITL` for `ready-for-human`, and keep this repo as a single-context domain-doc layout.
+
+### Rationale
+
+This matches the existing workspace labels and avoids moving work into GitHub Issues just because the code remote is GitHub. Keeping domain labels separate from workflow labels makes future Linear cleanup less ambiguous.
+
+### Consequences
+
+Engineering skills should read `AGENTS.md` and `docs/agents/*.md` before writing to Linear. Existing Linear projects can be cleaned up later without changing this repo-level convention.
+
 ## 2026-04-11 Structured Compaction As Extension
 
 ### Context
