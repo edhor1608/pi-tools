@@ -13,7 +13,7 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
-Pi version baseline: this repo is currently being updated for Pi `0.75.x`.
+Pi version baseline: this repo is currently developed and validated against Pi `0.75.3`.
 Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version-notes.md).
 
 ## What Problem This Solves
@@ -74,6 +74,7 @@ Why that is nice:
 In short: keep Pi's base prompt, then add the small model-specific steering each model benefits from.
 
 Seeded defaults currently include:
+- `openai-codex/gpt-5.5`
 - `openai-codex/gpt-5.4`
 - `openai-codex/gpt-5.3-codex`
 - `openai-codex/gpt-5.3-codex-spark`
@@ -128,7 +129,7 @@ Then authenticate in one of these ways:
 - or export a supported API key such as `OPENAI_API_KEY`
 
 Pi docs:
-- `https://github.com/earendil-works/pi-mono/tree/main/packages/coding-agent`
+- `https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent`
 - `https://pi.dev`
 
 ## Extension 3: Context Health
@@ -184,7 +185,7 @@ Current behavior:
 - `/context-files` opens a toggle UI for discovered context files
 - discovery order comes from Pi's exported `loadProjectContextFiles()` utility so the toggle list tracks Pi core more closely
 - each file can be switched between `✓ enabled` and `× disabled`
-- disabled files are removed from Pi's final project-context section before the model sees it
+- disabled files are removed from the final `# Project Context` section before the model sees it
 - Pi's startup `[Context]` header still reflects core discovery, because that happens before extension filtering
 
 In short: keep Pi's automatic context-file discovery, but decide which files actually count.

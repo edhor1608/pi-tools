@@ -1,9 +1,163 @@
 # Pi Version Notes
 
-This repo is currently developed and validated against Pi `0.67.6`.
+This repo is currently developed and validated against Pi `0.75.3`.
+
+The `0.67.7` through `0.75.3` changelog gap was reviewed and revalidated on `2026-05-20`.
+
+Source used for this review:
+- local Pi install `0.75.3`
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/CHANGELOG.md`
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/models.md`
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md`
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/tui.md`
+
+## Adopted 0.68.x-0.75.x Changes
+
+### Package Scope Migration
+
+Relevant versions:
+- `0.74.0`
+- `0.73.1`
+
+What changed upstream:
+- Pi package references moved from `@mariozechner/*` to `@earendil-works/*`
+- `pi update --self` supports migrating the global package name
+
+What this repo now does with that:
+- imports and peer dependencies now use `@earendil-works/pi-coding-agent`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, and `@earendil-works/pi-tui`
+- structured-compaction now resolves Pi's internal OpenAI Responses shared converter relative to `@earendil-works/pi-ai/openai-responses` instead of a global install path
+- README install examples now use `npm install -g @earendil-works/pi-coding-agent`
+
+Repo surfaces:
+- `package.json`
+- `README.md`
+- `extensions/**`
+- `scripts/**`
+
+### XML Project Context Boundaries
+
+Relevant version:
+- `0.75.0`
+
+What changed upstream:
+- Pi changelog says system prompt and context-file boundaries now use explicit XML tags in some prompt paths
+- installed `0.75.3` still emits the legacy Markdown `# Project Context` section for the default prompt path, but emits `<project_context>` for custom prompts
+
+What this repo now does with that:
+- `context-files` filters both legacy Markdown project context sections and XML `<project_context>` sections
+- `context-files` uses Pi's `event.systemPromptOptions.contextFiles` list during `before_agent_start` so filtering tracks the files Pi actually loaded
+- `scripts/test-context-files.ts` covers both prompt shapes
+- `scripts/test-context-files.ts` covers literal `</project_context>` text inside context-file content
+
+Repo surfaces:
+- `extensions/context-files.ts`
+- `scripts/test-context-files.ts`
+
+### Node Runtime Baseline
+
+Relevant version:
+- `0.75.0`
+
+What changed upstream:
+- Pi raised the minimum supported Node.js version to `22.19.0`
+
+What this repo does with that:
+- `package.json` declares `node >=22.19.0` to match Pi's runtime baseline
+- README install guidance now points users at the renamed current Pi package
+
+### Assistant Markdown / TUI Rendering
+
+Relevant versions:
+- `0.74.1`
+- `0.73.1`
+- `0.73.0`
+- `0.70.5`
+
+What changed upstream:
+- Pi TUI markdown gained list indentation, task-list checkbox rendering, large-markdown robustness, inline image fixes, compact read rendering, and OSC hyperlink update rendering
+
+What this repo now does with that:
+- `file-footnotes` still patches assistant Markdown only for file-link footnotes
+- `scripts/test-file-footnotes.ts` now compares non-file link output after stripping Pi's assistant prompt-marker OSC sequences, because assistant message rendering can wrap core Markdown output with message markers
+
+Repo surfaces:
+- `extensions/file-footnotes.ts`
+- `scripts/test-file-footnotes.ts`
+
+### Provider / Model Metadata Changes
+
+Relevant versions:
+- `0.75.1`
+- `0.75.0`
+- `0.74.1`
+- `0.72.0`
+- `0.71.1`
+- `0.71.0`
+- `0.70.3`
+- `0.70.1`
+- `0.70.0`
+- `0.69.0`
+- `0.68.1`
+
+What changed upstream:
+- `thinkingLevelMap` replaced old `compat.reasoningEffortMap`
+- GPT-5.5 Codex, Together AI, DeepSeek, Fireworks, Moonshot, Cloudflare, and Xiaomi providers/models were added or corrected
+- OpenAI Codex transport, cache/session-affinity, Responses, WebSocket fallback, and model metadata behavior changed repeatedly
+
+What this repo does with that:
+- no direct code change is required for `thinkingLevelMap` because this package does not register providers or ship `models.json`
+- structured compaction remains high-risk because it imports an internal OpenAI Responses converter and constructs `/responses/compact` calls directly
+- defaults now include an `openai-codex/gpt-5.5` prompt fragment derived from the official Codex model metadata
+
+Repo surfaces:
+- `extensions/structured-compaction/**`
+- `defaults/model-system-prompts/**`
+- `defaults/structured-compaction/README.md`
+
+### Extension UI Lifecycle APIs
+
+Relevant versions:
+- `0.75.0`
+- `0.74.0`
+
+What changed upstream:
+- Pi exposes `thinking_level_select` for model/thinking-level changes
+- Pi exposes working loader controls through `ctx.ui.setWorkingMessage`, `setWorkingVisible`, and `setWorkingIndicator`
+- Pi exposes `message_end` as a finalized-message rewrite hook
+
+What this repo now does with that:
+- `context-health` listens to `thinking_level_select` and includes the active thinking level in its footer status and `/context-health` details
+- `notify` uses `ctx.ui.setWorkingIndicator` and `ctx.ui.setWorkingMessage` while the agent is active, then restores Pi defaults when the run ends
+- `message_end` was evaluated for `file-footnotes`, but not adopted because this extension needs display-only assistant Markdown footnotes; rewriting finalized messages would mutate conversation content instead of just rendering links
+
+Repo surfaces:
+- `extensions/context-health.ts`
+- `extensions/notify.ts`
+- `scripts/test-context-health.ts`
+- `scripts/test-notify.ts`
+
+## Suggested Rechecks For Future Pi Upgrades
+
+If this repo upgrades Pi beyond `0.75.3`, re-check these areas first:
+- package scope and install layout, especially any hardcoded global package paths
+- `context-files` against both Markdown and XML project-context prompt boundaries
+- `file-footnotes` against assistant Markdown, OSC prompt markers, hyperlinks, inline images, and `/reload`
+- `structured-compaction` against OpenAI Codex Responses transport, session ids, cache affinity, internal converter paths, and `/responses/compact` payload shape
+- new provider/model IDs against `defaults/model-system-prompts/**`
+
+## Current Recommendation
+
+Pi `0.75.3` is now the validated baseline for this repo.
+
+The main remaining compatibility risk is `structured-compaction` because it still depends on an internal `openai-responses-shared.js` converter path and live OpenAI/Codex compaction semantics.
+
+## Historical 0.67.x Review
+
+Historical note: this section is retained for context only. The current validated baseline is Pi `0.75.3`.
 
 The `0.67.0` through `0.67.6` changelog gap was reviewed and revalidated on `2026-04-17`.
-This note keeps the repo-facing changes visible even though the active baseline has now moved to `0.67.6`.
+This note keeps the repo-facing changes visible even though the active baseline has now moved past `0.67.6`.
 
 Source used for this review:
 - upstream `packages/coding-agent/CHANGELOG.md`
@@ -130,9 +284,9 @@ If this repo upgrades Pi beyond `0.67.6`, re-check these areas first:
 - `structured-compaction` and `context-health` on `openai-codex` for cache/session-id behavior
 - package install/update flows for the local and git package paths this repo relies on
 
-## Current Recommendation
+## Historical 0.67.x Recommendation
 
-Pi `0.67.6` is now a validated baseline for this repo.
+At the time of the archived 0.67.x review, Pi `0.67.6` was the validated baseline for this repo.
 
 The main remaining compatibility risk is still `file-footnotes`, not because non-file links drift from Pi core anymore, but because the extension still patches assistant-message rendering to add file-only footnotes and collapse behavior.
 

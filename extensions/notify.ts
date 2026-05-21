@@ -1,10 +1,14 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
 import { classifyAgentEndState, type AgentEndClassification } from "./shared/agent-end-state.ts";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const WORKING_INDICATOR: WorkingIndicatorOptions = {
+	frames: BRAILLE_FRAMES,
+	intervalMs: 80,
+};
 
 type NotifyKind = "ready" | "question" | "error" | "queued" | "stopped";
 
@@ -115,6 +119,8 @@ export function classifyAgentEnd(messages: AgentMessage[], hasPendingMessages = 
 }
 
 function stopAnimation(ctx: ExtensionContext, pi: ExtensionAPI, prefix?: string) {
+	ctx.ui.setWorkingIndicator();
+	ctx.ui.setWorkingMessage();
 	ctx.ui.setTitle(prefix ? `${prefix} ${getBaseTitle(pi)}` : getBaseTitle(pi));
 }
 
@@ -132,11 +138,13 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	const startAnimation = (ctx: ExtensionContext) => {
 		stopTimer();
 		if (!ctx.hasUI) return;
+		ctx.ui.setWorkingIndicator(WORKING_INDICATOR);
+		ctx.ui.setWorkingMessage("Working...");
 		timer = setInterval(() => {
 			const frame = BRAILLE_FRAMES[frameIndex % BRAILLE_FRAMES.length];
 			ctx.ui.setTitle(`${frame} ${getBaseTitle(pi)}`);
 			frameIndex++;
-		}, 80);
+		}, WORKING_INDICATOR.intervalMs);
 	};
 
 	pi.on("session_start", async (_event, ctx) => {

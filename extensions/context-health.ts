@@ -56,6 +56,7 @@ interface ContextHealthSnapshot {
 	subscription: SubscriptionUsage;
 	cache: CacheHealth;
 	rot: RotHealth;
+	thinkingLevel?: string;
 }
 
 interface ContextHealthMessageDetails {
@@ -284,12 +285,13 @@ const computeSubscriptionUsage = (ctx: ExtensionContext, branch: SessionEntry[])
 	};
 };
 
-const buildSnapshot = (ctx: ExtensionContext): ContextHealthSnapshot => {
+const buildSnapshot = (ctx: ExtensionContext, thinkingLevel?: string): ContextHealthSnapshot => {
 	const branch = ctx.sessionManager.getBranch();
 	return {
 		subscription: computeSubscriptionUsage(ctx, branch),
 		cache: computeRollingCacheHealth(branch),
 		rot: computeRotHealth(ctx, branch),
+		thinkingLevel,
 	};
 };
 
@@ -302,7 +304,10 @@ const renderStatusLine = (ctx: ExtensionContext, snapshot: ContextHealthSnapshot
 		theme.fg(subscriptionColor, snapshot.subscription.shortLabel),
 		theme.fg(cacheColor, snapshot.cache.shortLabel),
 		theme.fg(rotColor, snapshot.rot.shortLabel),
-	].join(" ");
+		snapshot.thinkingLevel ? theme.fg("dim", `think ${snapshot.thinkingLevel}`) : undefined,
+	]
+		.filter((part): part is string => part !== undefined)
+		.join(" ");
 };
 
 const buildPreview = (snapshot: ContextHealthSnapshot): string =>
@@ -310,7 +315,10 @@ const buildPreview = (snapshot: ContextHealthSnapshot): string =>
 		`- subscription: ${snapshot.subscription.label}`,
 		`- cache: ${snapshot.cache.percent !== undefined ? `${formatPercent(snapshot.cache.percent)} ${snapshot.cache.label}` : snapshot.cache.label}`,
 		`- rot: ${snapshot.rot.label} (${snapshot.rot.score}/100)`,
-	].join("\n");
+		snapshot.thinkingLevel ? `- thinking level: ${snapshot.thinkingLevel}` : undefined,
+	]
+		.filter((line): line is string => line !== undefined)
+		.join("\n");
 
 const buildDetails = (snapshot: ContextHealthSnapshot, providerResponse?: ProviderResponseSnapshot): string => {
 	const lines = [
@@ -325,6 +333,9 @@ const buildDetails = (snapshot: ContextHealthSnapshot, providerResponse?: Provid
 	if (snapshot.subscription.plan) {
 		lines.splice(2, 0, `- plan: ${snapshot.subscription.plan}`);
 	}
+	if (snapshot.thinkingLevel) {
+		lines.push(`- thinking level: ${snapshot.thinkingLevel}`);
+	}
 	if (snapshot.rot.contextPercent !== undefined && snapshot.rot.contextWindow) {
 		lines.push(
 			`- context usage: ${formatPercent(snapshot.rot.contextPercent)} of ${formatTokenCount(snapshot.rot.contextWindow)} (${snapshot.rot.contextPercentKind})`,
@@ -338,13 +349,15 @@ const buildDetails = (snapshot: ContextHealthSnapshot, providerResponse?: Provid
 	return lines.join("\n");
 };
 
-const updateStatus = (ctx: ExtensionContext) => {
-	const snapshot = buildSnapshot(ctx);
+const updateStatus = (ctx: ExtensionContext, thinkingLevel?: string) => {
+	const snapshot = buildSnapshot(ctx, thinkingLevel);
 	ctx.ui.setStatus(STATUS_KEY, renderStatusLine(ctx, snapshot));
 };
 
 export default function contextHealthExtension(pi: ExtensionAPI) {
 	let lastProviderResponse: ProviderResponseSnapshot | undefined;
+	let lastThinkingLevel: string | undefined;
+	const getThinkingLevel = (): string | undefined => lastThinkingLevel ?? pi.getThinkingLevel();
 
 	pi.registerMessageRenderer(CUSTOM_TYPE, (message, options, theme) => {
 		const details = message.details as ContextHealthMessageDetails | undefined;
@@ -363,7 +376,7 @@ export default function contextHealthExtension(pi: ExtensionAPI) {
 	pi.registerCommand("context-health", {
 		description: "Show subscription, cache, and rot health for the current branch",
 		handler: async (_args, ctx) => {
-			const snapshot = buildSnapshot(ctx);
+			const snapshot = buildSnapshot(ctx, getThinkingLevel());
 			const providerResponse = isProviderResponseDebugEnabled() ? lastProviderResponse : undefined;
 			pi.sendMessage({
 				customType: CUSTOM_TYPE,
@@ -379,22 +392,29 @@ export default function contextHealthExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		updateStatus(ctx);
+		lastThinkingLevel = pi.getThinkingLevel();
+		updateStatus(ctx, lastThinkingLevel);
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
-		updateStatus(ctx);
+		updateStatus(ctx, getThinkingLevel());
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		updateStatus(ctx);
+		updateStatus(ctx, getThinkingLevel());
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		updateStatus(ctx);
+		updateStatus(ctx, getThinkingLevel());
 	});
 
 	pi.on("model_select", async (_event, ctx) => {
-		updateStatus(ctx);
+		lastThinkingLevel = pi.getThinkingLevel();
+		updateStatus(ctx, lastThinkingLevel);
+	});
+
+	pi.on("thinking_level_select", async (event, ctx) => {
+		lastThinkingLevel = event.level;
+		updateStatus(ctx, lastThinkingLevel);
 	});
 }
