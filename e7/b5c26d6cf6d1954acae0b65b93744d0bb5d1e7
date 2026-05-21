@@ -1,0 +1,27 @@
+extensions/context-health.ts
+  s_20273104c50f0c::t_b6b1e2d17a1f09 360,379,395-396,400,404,408,412
+scripts/test-context-health.ts
+  s_20273104c50f0c::t_196e33b6a3b0be 24-26,33,36,69-74,77-82
+extensions/notify.ts
+  s_20273104c50f0c::t_242d423eae2466 147
+docs/pi-version-notes.md
+  s_20273104c50f0c::t_1c6b7bfe93cfe7 155-157,160,287,289
+scripts/test-context-files.ts
+  s_20273104c50f0c::t_36ddd9b5c2b1d5 135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "e7b5c26d6cf6d1954acae0b65b93744d0bb5d1e7",
+  "prompts": {},
+  "sessions": {
+    "s_20273104c50f0c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e4574-61e0-7291-99a9-475aaa9ba393",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Jonas Rohde <edhor.jonas@gmail.com>"
+    }
+  }
+}
