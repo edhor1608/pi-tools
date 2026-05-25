@@ -71,11 +71,28 @@ const renderContextSection = (files: ContextFile[]): string => {
 	return `${CONTEXT_SECTION_HEADER}${files.map((file) => `## ${file.path}\n\n${file.content.replace(/\n+$/g, "")}\n\n`).join("")}`;
 };
 
+const escapeXmlAttr = (value: string): string =>
+	value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&apos;");
+
 const renderXmlContextSection = (files: ContextFile[]): string => {
 	if (files.length === 0) return "";
 	return `${XML_CONTEXT_SECTION_HEADER}${files
-		.map((file) => `<project_instructions path="${file.path}">\n${file.content.replace(/\n+$/g, "")}\n\n</project_instructions>\n\n`)
+		.map((file) => `<project_instructions path="${escapeXmlAttr(file.path)}">\n${file.content.replace(/\n+$/g, "")}\n\n</project_instructions>\n\n`)
 		.join("")}${XML_CONTEXT_SECTION_FOOTER}`;
+};
+
+const findXmlContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
+	const start = systemPrompt.indexOf(XML_CONTEXT_SECTION_HEADER);
+	if (start === -1) return undefined;
+	const searchFrom = start + XML_CONTEXT_SECTION_HEADER.length;
+	const footerStart = systemPrompt.indexOf(XML_CONTEXT_SECTION_FOOTER, searchFrom);
+	if (footerStart === -1) return undefined;
+	return { start, end: footerStart + XML_CONTEXT_SECTION_FOOTER.length };
 };
 
 const findContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
@@ -101,6 +118,10 @@ const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], en
 		if (exactStart !== -1) {
 			return `${systemPrompt.slice(0, exactStart)}${filtered}${systemPrompt.slice(exactStart + original.length)}`;
 		}
+	}
+	const xmlRange = findXmlContextSectionRange(systemPrompt);
+	if (xmlRange) {
+		return `${systemPrompt.slice(0, xmlRange.start)}${renderXmlContextSection(enabledFiles)}${systemPrompt.slice(xmlRange.end)}`;
 	}
 	const filteredSection = renderContextSection(enabledFiles);
 	const range = findContextSectionRange(systemPrompt);

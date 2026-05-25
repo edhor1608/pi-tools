@@ -1,16 +1,16 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import contextFilesExtension, { discoverContextFiles, filterSystemPrompt } from "../extensions/context-files.ts";
 
 const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
-const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
+const piCodingAgentDistDir = dirname(fileURLToPath(piCodingAgentEntry));
 const { buildSystemPrompt } = await import(pathToFileURL(join(piCodingAgentDistDir, "core", "system-prompt.js")).href);
 
 const tempRoot = mkdtempSync(join(tmpdir(), "pi-context-files-"));
 const agentDir = join(tempRoot, "agent");
-const workspace = join(tempRoot, "workspace");
+const workspace = join(tempRoot, "Team & \"Ops\"");
 const repo = join(workspace, "repo");
 
 mkdirSync(agentDir, { recursive: true });
@@ -72,6 +72,9 @@ if (filteredPrompt.includes("GLOBAL RULES")) {
 }
 if (!filteredPrompt.includes("WORKSPACE RULES") || !filteredPrompt.includes("PROJECT RULES")) {
 	throw new Error("enabled ancestor and project context files should remain in the final system prompt");
+}
+if (!filteredPrompt.includes("Team &amp; &quot;Ops&quot;")) {
+	throw new Error("XML context file paths should be escaped in project_instructions attributes");
 }
 if (!filteredPrompt.includes("<project_context>") && !filteredPrompt.includes("# Project Context")) {
 	throw new Error("expected project context section to remain while at least one file is enabled");

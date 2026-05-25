@@ -2,10 +2,10 @@ import fileFootnotesExtension, { setFileFootnotesExpanded } from "../extensions/
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, setCapabilities } from "@earendil-works/pi-tui";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
-const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
+const piCodingAgentDistDir = dirname(fileURLToPath(piCodingAgentEntry));
 const { AssistantMessageComponent } = await import(
 	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,
 );
