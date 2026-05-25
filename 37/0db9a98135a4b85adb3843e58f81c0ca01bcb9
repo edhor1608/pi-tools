@@ -1,0 +1,29 @@
+extensions/file-footnotes.ts
+  s_caafe8515743a1::t_acf769dc40f754 8
+extensions/context-files.ts
+  s_caafe8515743a1::t_dca3f91f292056 74-81,85,89-97,122-124
+extensions/structured-compaction/responses-adapter.ts
+  s_caafe8515743a1::t_4787e660bda03b 2-3,16-19,109
+scripts/test-context-files.ts
+  s_caafe8515743a1::t_ebb4d79da3e3cc 13
+  s_caafe8515743a1::t_3d56b629166568 76-77
+  s_caafe8515743a1::t_78941248585c42 4,8
+scripts/test-file-footnotes.ts
+  s_caafe8515743a1::t_23c9852672e7e5 5,8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "370db9a98135a4b85adb3843e58f81c0ca01bcb9",
+  "prompts": {},
+  "sessions": {
+    "s_caafe8515743a1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6068-0d20-7ae2-bf7b-d22a9a338135",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Jonas Rohde <edhor.jonas@gmail.com>"
+    }
+  }
+}
