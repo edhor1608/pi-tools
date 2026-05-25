@@ -1,0 +1,69 @@
+package.json
+  s_caafe8515743a1::t_382e19a87339b0 53-56
+extensions/structured-compaction/index.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-2
+extensions/structured-compaction/responses-adapter.ts
+  s_caafe8515743a1::t_382e19a87339b0 3-5,15,106
+scripts/test-context-files.ts
+  s_caafe8515743a1::t_e30bb264665f5a 76,92,107
+  s_caafe8515743a1::t_382e19a87339b0 7
+extensions/structured-compaction/metrics.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-2
+scripts/analyze-session.ts
+  s_caafe8515743a1::t_382e19a87339b0 3
+extensions/model-system-prompt.ts
+  s_caafe8515743a1::t_382e19a87339b0 3
+extensions/stash.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-3
+extensions/context-files.ts
+  s_caafe8515743a1::t_e5964b2c20c850 19-20,74-80,94-100,102
+  s_caafe8515743a1::t_382e19a87339b0 10-11
+extensions/structured-compaction/config.ts
+  s_caafe8515743a1::t_382e19a87339b0 3
+extensions/context-health.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-3
+README.md
+  s_caafe8515743a1::t_0e8a3d6663638b 16
+  s_caafe8515743a1::t_382e19a87339b0 117,131,353
+scripts/test-file-footnotes.ts
+  s_caafe8515743a1::t_21b9a4f4d159ea 122-125
+  s_caafe8515743a1::t_52a77b59e8cf98 223
+  s_caafe8515743a1::t_382e19a87339b0 2-3,7
+extensions/notify.ts
+  s_caafe8515743a1::t_382e19a87339b0 3-4
+extensions/structured-compaction/renderer.ts
+  s_caafe8515743a1::t_382e19a87339b0 1
+extensions/shared/defaults.ts
+  s_caafe8515743a1::t_382e19a87339b0 4
+docs/pi-version-notes.md
+  s_caafe8515743a1::t_2aebde80f29900 137,258,266
+  s_caafe8515743a1::t_ae360f5ac5f8c6 3-134
+extensions/file-footnotes.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-2,7
+extensions/structured-compaction/report.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-2
+extensions/structured-compaction/artifact.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-3
+extensions/structured-compaction/types.ts
+  s_caafe8515743a1::t_382e19a87339b0 1
+extensions/shared/agent-end-state.ts
+  s_caafe8515743a1::t_382e19a87339b0 1
+extensions/structured-compaction/backend.ts
+  s_caafe8515743a1::t_382e19a87339b0 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "6d629cf24527e28669566cc70e0aefa95108fe29",
+  "prompts": {},
+  "sessions": {
+    "s_caafe8515743a1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6068-0d20-7ae2-bf7b-d22a9a338135",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Jonas Rohde <edhor.jonas@gmail.com>"
+    }
+  }
+}
