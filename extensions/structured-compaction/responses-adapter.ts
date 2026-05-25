@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
 import type {
 	JsonValue,
 	StructuredCompactionConfig,
@@ -12,7 +12,7 @@ import type {
 } from "./types.ts";
 
 const RESPONSES_SHARED_MODULE_PATH =
-	"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+	"/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/openai-responses-shared.js";
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -103,7 +103,7 @@ const buildUserAgent = (): string => {
 	try {
 		const packageJson = JSON.parse(
 			readFileSync(
-				"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/package.json",
+				"/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/package.json",
 				"utf8",
 			),
 		) as { version?: string };

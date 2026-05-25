@@ -13,7 +13,7 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
-Pi version baseline: this repo is currently developed and validated against Pi `0.67.6`.
+Pi version baseline: this repo is currently developed and validated against Pi `0.75.5`.
 Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version-notes.md).
 
 ## What Problem This Solves
@@ -114,7 +114,7 @@ More details:
 If you do not have Pi yet:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 Start Pi once:
@@ -128,7 +128,7 @@ Then authenticate in one of these ways:
 - or export a supported API key such as `OPENAI_API_KEY`
 
 Pi docs:
-- `https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent`
+- `https://github.com/earendil-works/pi-mono/tree/main/packages/pi-coding-agent`
 - `https://pi.dev`
 
 ## Extension 3: Context Health
@@ -350,7 +350,7 @@ Project-local overrides also work under:
 For someone starting from zero, this is the shortest path:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 pi
 # authenticate with /login or an API key
 pi install git:github.com/edhor1608/pi-tools
