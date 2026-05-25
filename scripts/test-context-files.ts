@@ -1,16 +1,16 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import contextFilesExtension, { discoverContextFiles, filterSystemPrompt } from "../extensions/context-files.ts";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
-const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
+const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
+const piCodingAgentDistDir = dirname(fileURLToPath(piCodingAgentEntry));
 const { buildSystemPrompt } = await import(pathToFileURL(join(piCodingAgentDistDir, "core", "system-prompt.js")).href);
 
 const tempRoot = mkdtempSync(join(tmpdir(), "pi-context-files-"));
 const agentDir = join(tempRoot, "agent");
-const workspace = join(tempRoot, "workspace");
+const workspace = join(tempRoot, "Team & \"Ops\"");
 const repo = join(workspace, "repo");
 
 mkdirSync(agentDir, { recursive: true });
@@ -73,7 +73,10 @@ if (filteredPrompt.includes("GLOBAL RULES")) {
 if (!filteredPrompt.includes("WORKSPACE RULES") || !filteredPrompt.includes("PROJECT RULES")) {
 	throw new Error("enabled ancestor and project context files should remain in the final system prompt");
 }
-if (!filteredPrompt.includes("# Project Context")) {
+if (!filteredPrompt.includes("Team &amp; &quot;Ops&quot;")) {
+	throw new Error("XML context file paths should be escaped in project_instructions attributes");
+}
+if (!filteredPrompt.includes("<project_context>") && !filteredPrompt.includes("# Project Context")) {
 	throw new Error("expected project context section to remain while at least one file is enabled");
 }
 
@@ -89,7 +92,7 @@ if (typeof emptyContextPrompt !== "string") {
 if (emptyContextPrompt.includes("GLOBAL RULES") || emptyContextPrompt.includes("WORKSPACE RULES") || emptyContextPrompt.includes("PROJECT RULES")) {
 	throw new Error("all disabled context files should be removed");
 }
-if (emptyContextPrompt.includes("# Project Context")) {
+if (emptyContextPrompt.includes("<project_context>") || emptyContextPrompt.includes("# Project Context")) {
 	throw new Error("project context section should be removed when all files are disabled");
 }
 if (!emptyContextPrompt.includes("Current date:")) {
@@ -104,7 +107,7 @@ console.log(
 			filteredHasWorkspace: filteredPrompt.includes("WORKSPACE RULES"),
 			filteredHasProject: filteredPrompt.includes("PROJECT RULES"),
 			filteredHasGlobal: filteredPrompt.includes("GLOBAL RULES"),
-			emptyContextHasSection: emptyContextPrompt.includes("# Project Context"),
+			emptyContextHasSection: emptyContextPrompt.includes("<project_context>") || emptyContextPrompt.includes("# Project Context"),
 		},
 		null,
 		2,

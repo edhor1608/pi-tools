@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { CompactionEntry, SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { FileOperations } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { CompactionEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import type {
 	CompactionBackendOutput,
 	StructuredCompactionArtifact,

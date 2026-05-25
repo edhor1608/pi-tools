@@ -7,8 +7,8 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { Container, SettingsList, Text, type SettingItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Container, SettingsList, Text, type SettingItem } from "@earendil-works/pi-tui";
 import { join, relative, resolve, sep } from "node:path";
 
 const STATUS_KEY = "context-files";
@@ -16,6 +16,8 @@ const CONFIG_PATH = [".pi", "context-files.json"] as const;
 const ENABLED_VALUE = "✓ enabled";
 const DISABLED_VALUE = "× disabled";
 const CONTEXT_SECTION_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
+const XML_CONTEXT_SECTION_HEADER = "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n";
+const XML_CONTEXT_SECTION_FOOTER = "</project_context>\n\n";
 const SKILLS_SECTION_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
 const DATE_MARKER = "\nCurrent date: ";
 
@@ -69,6 +71,30 @@ const renderContextSection = (files: ContextFile[]): string => {
 	return `${CONTEXT_SECTION_HEADER}${files.map((file) => `## ${file.path}\n\n${file.content.replace(/\n+$/g, "")}\n\n`).join("")}`;
 };
 
+const escapeXmlAttr = (value: string): string =>
+	value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&apos;");
+
+const renderXmlContextSection = (files: ContextFile[]): string => {
+	if (files.length === 0) return "";
+	return `${XML_CONTEXT_SECTION_HEADER}${files
+		.map((file) => `<project_instructions path="${escapeXmlAttr(file.path)}">\n${file.content.replace(/\n+$/g, "")}\n\n</project_instructions>\n\n`)
+		.join("")}${XML_CONTEXT_SECTION_FOOTER}`;
+};
+
+const findXmlContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
+	const start = systemPrompt.indexOf(XML_CONTEXT_SECTION_HEADER);
+	if (start === -1) return undefined;
+	const searchFrom = start + XML_CONTEXT_SECTION_HEADER.length;
+	const footerStart = systemPrompt.indexOf(XML_CONTEXT_SECTION_FOOTER, searchFrom);
+	if (footerStart === -1) return undefined;
+	return { start, end: footerStart + XML_CONTEXT_SECTION_FOOTER.length };
+};
+
 const findContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
 	const start = systemPrompt.indexOf(CONTEXT_SECTION_HEADER);
 	if (start === -1) return undefined;
@@ -82,14 +108,22 @@ const findContextSectionRange = (systemPrompt: string): { start: number; end: nu
 };
 
 const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], enabledFiles: ContextFile[]): string => {
-	const originalSection = renderContextSection(allFiles);
-	const filteredSection = renderContextSection(enabledFiles);
-	if (originalSection.length > 0) {
-		const exactStart = systemPrompt.indexOf(originalSection);
+	const candidates = [
+		{ original: renderXmlContextSection(allFiles), filtered: renderXmlContextSection(enabledFiles) },
+		{ original: renderContextSection(allFiles), filtered: renderContextSection(enabledFiles) },
+	];
+	for (const { original, filtered } of candidates) {
+		if (original.length === 0) continue;
+		const exactStart = systemPrompt.indexOf(original);
 		if (exactStart !== -1) {
-			return `${systemPrompt.slice(0, exactStart)}${filteredSection}${systemPrompt.slice(exactStart + originalSection.length)}`;
+			return `${systemPrompt.slice(0, exactStart)}${filtered}${systemPrompt.slice(exactStart + original.length)}`;
 		}
 	}
+	const xmlRange = findXmlContextSectionRange(systemPrompt);
+	if (xmlRange) {
+		return `${systemPrompt.slice(0, xmlRange.start)}${renderXmlContextSection(enabledFiles)}${systemPrompt.slice(xmlRange.end)}`;
+	}
+	const filteredSection = renderContextSection(enabledFiles);
 	const range = findContextSectionRange(systemPrompt);
 	if (!range) return systemPrompt;
 	return `${systemPrompt.slice(0, range.start)}${filteredSection}${systemPrompt.slice(range.end)}`;

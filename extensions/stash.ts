@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Container, Key, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Container, Key, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { classifyAgentEndState } from "./shared/agent-end-state.ts";
 
 const STATUS_KEY = "stash";
