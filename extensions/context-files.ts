@@ -24,6 +24,11 @@ interface ContextFile {
 	content: string;
 }
 
+interface PromptContextFile {
+	path: string;
+	content: string;
+}
+
 interface ContextFilesConfig {
 	version: 1;
 	disabledPaths: string[];
@@ -58,11 +63,14 @@ const saveConfig = (cwd: string, config: ContextFilesConfig): void => {
 	writeFileSync(path, `${JSON.stringify({ version: 1, disabledPaths: [...new Set(config.disabledPaths)].sort() }, null, 2)}\n`, "utf-8");
 };
 
-const discoverContextFiles = (cwd: string, agentDir = getAgentDir()): ContextFile[] =>
-	loadProjectContextFiles({ cwd: resolve(cwd), agentDir: resolve(agentDir) }).map((file) => ({
+const normalizeContextFiles = (files: PromptContextFile[]): ContextFile[] =>
+	files.map((file) => ({
 		path: file.path,
 		content: file.content,
 	}));
+
+const discoverContextFiles = (cwd: string, agentDir = getAgentDir()): ContextFile[] =>
+	normalizeContextFiles(loadProjectContextFiles({ cwd: resolve(cwd), agentDir: resolve(agentDir) }));
 
 const renderContextSection = (files: ContextFile[]): string => {
 	if (files.length === 0) return "";
@@ -95,10 +103,23 @@ const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], en
 	return `${systemPrompt.slice(0, range.start)}${filteredSection}${systemPrompt.slice(range.end)}`;
 };
 
-const filterSystemPrompt = (systemPrompt: string, cwd: string, agentDir = getAgentDir()): string => {
+const getPromptContextFiles = (event: { systemPromptOptions?: unknown }): PromptContextFile[] | undefined => {
+	const options = event.systemPromptOptions;
+	if (!isObject(options) || !Array.isArray(options.contextFiles)) return undefined;
+	return options.contextFiles.filter(
+		(file): file is PromptContextFile => isObject(file) && typeof file.path === "string" && typeof file.content === "string",
+	);
+};
+
+const filterSystemPrompt = (
+	systemPrompt: string,
+	cwd: string,
+	agentDir = getAgentDir(),
+	promptContextFiles?: PromptContextFile[],
+): string => {
 	const config = loadConfig(cwd);
 	if (config.disabledPaths.length === 0) return systemPrompt;
-	const files = discoverContextFiles(cwd, agentDir);
+	const files = promptContextFiles ? normalizeContextFiles(promptContextFiles) : discoverContextFiles(cwd, agentDir);
 	if (files.length === 0) return systemPrompt;
 	const disabled = new Set(config.disabledPaths.map((path) => resolve(path)));
 	const enabledFiles = files.filter((file) => !disabled.has(resolve(file.path)));
@@ -225,7 +246,7 @@ export { discoverContextFiles, filterSystemPrompt };
 
 export default function contextFilesExtension(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx) => {
-		const filtered = filterSystemPrompt(event.systemPrompt, ctx.cwd);
+		const filtered = filterSystemPrompt(event.systemPrompt, ctx.cwd, getAgentDir(), getPromptContextFiles(event));
 		return filtered === event.systemPrompt ? undefined : { systemPrompt: filtered };
 	});
 

@@ -13,8 +13,8 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
-Pi version baseline: this repo is currently developed and validated against Pi `0.67.6`.
-Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version-notes.md).
+Pi version baseline: this repo is currently runtime-validated against local Pi `0.67.68`.
+The `0.68.0` through `0.69.0` changelog gap was reviewed on `2026-04-23`, and the repo-impact fixes from that review are captured in [docs/pi-version-notes.md](docs/pi-version-notes.md).
 
 ## What Problem This Solves
 
@@ -163,6 +163,7 @@ Why that is nice:
 
 Current behavior:
 - while Pi is working, the terminal title shows a spinner
+- on newer Pi versions, the in-app working indicator also switches to a small active marker during streaming
 - when Pi finishes normally, the title switches to a ready marker and a native terminal notification is sent
 - when Pi finishes by asking a question, the title and notification switch to a needs-input state
 - when Pi ends with an error, the title and notification switch to an error state
@@ -183,6 +184,7 @@ Why that is nice:
 Current behavior:
 - `/context-files` opens a toggle UI for discovered context files
 - discovery order comes from Pi's exported `loadProjectContextFiles()` utility so the toggle list tracks Pi core more closely
+- on newer Pi versions, the final prompt filter prefers Pi's structured `systemPromptOptions.contextFiles` input instead of re-discovering files again
 - each file can be switched between `✓ enabled` and `× disabled`
 - disabled files are removed from the final `# Project Context` section before the model sees it
 - Pi's startup `[Context]` header still reflects core discovery, because that happens before extension filtering
@@ -385,6 +387,7 @@ It works automatically once enabled. There is no command to remember.
 
 What you should see:
 - a spinner in the terminal title while Pi is working
+- on newer Pi versions, a small in-app working indicator while the agent is active
 - a ready marker in the title when Pi finishes normally
 - a needs-input marker in the title when Pi ends by asking a question
 - a native terminal notification when Pi becomes ready or needs input
@@ -410,7 +413,7 @@ Use it when Pi finds the right context files, but you do not want all of them to
 /context-files
 ```
 
-Then toggle entries on or off in the UI. Disabled files are removed from the final prompt before the model sees it.
+Then toggle entries on or off in the UI. Disabled files are removed from the final prompt before the model sees it. On newer Pi versions the extension filters the exact context-file list Pi already prepared for that turn.
 
 ### Stash
 
