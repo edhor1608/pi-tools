@@ -7,8 +7,8 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { Container, SettingsList, Text, type SettingItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Container, SettingsList, Text, type SettingItem } from "@earendil-works/pi-tui";
 import { join, relative, resolve, sep } from "node:path";
 
 const STATUS_KEY = "context-files";
@@ -18,6 +18,9 @@ const DISABLED_VALUE = "× disabled";
 const CONTEXT_SECTION_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
 const SKILLS_SECTION_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
 const DATE_MARKER = "\nCurrent date: ";
+const XML_PROJECT_CONTEXT_START = "<project_context>";
+const XML_PROJECT_CONTEXT_END = "</project_context>";
+const XML_PROJECT_INSTRUCTIONS_END = "</project_instructions>";
 
 interface ContextFile {
 	path: string;
@@ -69,6 +72,21 @@ const renderContextSection = (files: ContextFile[]): string => {
 	return `${CONTEXT_SECTION_HEADER}${files.map((file) => `## ${file.path}\n\n${file.content.replace(/\n+$/g, "")}\n\n`).join("")}`;
 };
 
+const renderXmlContextSection = (files: ContextFile[]): string => {
+	if (files.length === 0) return "";
+	return `${XML_PROJECT_CONTEXT_START}\n\nProject-specific instructions and guidelines:\n\n${files
+		.map((file) => `<project_instructions path="${file.path}">\n${file.content.replace(/\n+$/g, "")}\n${XML_PROJECT_INSTRUCTIONS_END}`)
+		.join("\n\n")}\n${XML_PROJECT_CONTEXT_END}`;
+};
+
+const findXmlContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
+	const start = systemPrompt.indexOf(XML_PROJECT_CONTEXT_START);
+	if (start === -1) return undefined;
+	const endStart = systemPrompt.indexOf(XML_PROJECT_CONTEXT_END, start + XML_PROJECT_CONTEXT_START.length);
+	if (endStart === -1) return undefined;
+	return { start, end: endStart + XML_PROJECT_CONTEXT_END.length };
+};
+
 const findContextSectionRange = (systemPrompt: string): { start: number; end: number } | undefined => {
 	const start = systemPrompt.indexOf(CONTEXT_SECTION_HEADER);
 	if (start === -1) return undefined;
@@ -82,6 +100,11 @@ const findContextSectionRange = (systemPrompt: string): { start: number; end: nu
 };
 
 const replaceContextSection = (systemPrompt: string, allFiles: ContextFile[], enabledFiles: ContextFile[]): string => {
+	const xmlRange = findXmlContextSectionRange(systemPrompt);
+	if (xmlRange) {
+		return `${systemPrompt.slice(0, xmlRange.start)}${renderXmlContextSection(enabledFiles)}${systemPrompt.slice(xmlRange.end)}`;
+	}
+
 	const originalSection = renderContextSection(allFiles);
 	const filteredSection = renderContextSection(enabledFiles);
 	if (originalSection.length > 0) {

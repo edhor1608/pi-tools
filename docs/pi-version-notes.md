@@ -1,137 +1,162 @@
 # Pi Version Notes
 
-This repo is currently developed and validated against Pi `0.67.6`.
+This repo was reviewed for Pi `0.79.10` compatibility.
 
-The `0.67.0` through `0.67.6` changelog gap was reviewed and revalidated on `2026-04-17`.
-This note keeps the repo-facing changes visible even though the active baseline has now moved to `0.67.6`.
+The `0.67.7` through `0.79.10` changelog range was reviewed on `2026-06-22`.
 
 Source used for this review:
-- upstream `packages/coding-agent/CHANGELOG.md`
-- validated against local Pi install `0.67.6`
+- installed Pi package `@earendil-works/pi-coding-agent@0.75.5` under `/opt/homebrew/lib/node_modules`
+- npm package `@earendil-works/pi-coding-agent@0.79.10` changelog
+- installed docs for extensions, packages, models, custom providers, TUI, sessions, settings, and compaction
 
-## Adopted 0.67.x Changes
+Focused tests were run with the active local package resolver, so this note treats `0.79.10` as the reviewed target rather than a pinned runtime.
 
-### Assistant Markdown And File Links
+## Adopted 0.74.x - 0.79.x Changes
+
+### Package Scope Migration
 
 Relevant versions:
-- `0.67.6`
+- `0.74.0`
+- `0.73.1`
 
 What changed upstream:
-- assistant markdown links now render as OSC 8 hyperlinks when the terminal advertises support
-- hyperlink detection is stricter and disables OSC 8 on unknown terminals and under tmux/screen
+- Pi moved package references to `@earendil-works/*`.
+- `pi update --self` learned to migrate the global CLI package name.
 
 What this repo now does with that:
-- `extensions/file-footnotes.ts` still customizes file links into numbered footnotes
-- non-file links now fall back to Pi core markdown rendering instead of being reimplemented locally
-- file-footnote hyperlinks now follow Pi's terminal hyperlink capability detection instead of emitting OSC 8 unconditionally
-
-Why it still matters:
-- `file-footnotes` still monkey-patches assistant markdown rendering for file links, collapse state, and redraw behavior
-- that remains the highest maintenance-risk area if Pi changes assistant-message internals again
-- `/reload` is still less trustworthy than a full restart for this extension because the patch touches prototype/global state
+- runtime imports, peer dependencies, test imports, and README install commands use `@earendil-works/*`.
+- structured-compaction internal helper imports now resolve through the active package layout instead of a hardcoded Homebrew global path.
 
 Repo surfaces:
-- `extensions/file-footnotes.ts`
-- `scripts/test-file-footnotes.ts`
+- `package.json`
+- `README.md`
+- `extensions/**`
+- `scripts/**`
 
-### Context File Discovery
+### XML System Prompt Context Boundaries
 
 Relevant versions:
-- `0.67.4`
+- `0.75.0`
+- `0.75.4`
 
 What changed upstream:
-- `loadProjectContextFiles()` is now exported as a standalone utility
-- `--no-context-files` / `-nc` disables AGENTS.md / CLAUDE.md discovery
+- Pi changed default system prompt/context file boundaries from Markdown headings to explicit XML tags.
 
 What this repo now does with that:
-- `extensions/context-files.ts` now uses `loadProjectContextFiles()` instead of manually walking AGENTS.md / CLAUDE.md files
-- `scripts/test-context-files.ts` now validates the core discovery order across global, ancestor, and project files
-
-Why it matters:
-- the extension's toggle UI now tracks Pi core discovery behavior more closely
-- future Pi discovery-rule changes should be easier to inherit instead of reimplement
-- `--no-context-files` remains useful when isolating Pi-core context injection from extension behavior during debugging
+- `extensions/context-files.ts` filters the current `<project_context>` block and keeps the old `# Project Context` fallback for older prompt shapes.
+- `scripts/test-context-files.ts` validates the XML context section with Pi's current `buildSystemPrompt()` output.
 
 Repo surfaces:
 - `extensions/context-files.ts`
 - `scripts/test-context-files.ts`
 
-### Provider Response Diagnostics
+### Extension And Compaction Event Additions
 
 Relevant versions:
-- `0.67.6`
-- `0.67.4`
+- `0.78.1`
+- `0.79.10`
 
 What changed upstream:
-- new `after_provider_response` extension hook exposes HTTP status codes and headers after provider responses
+- extension contexts now expose `ctx.mode` and `ctx.getSystemPromptOptions()`.
+- `session_before_compact` and `session_compact` events now include `reason` and `willRetry`.
 
-What this repo now does with that:
-- `extensions/context-health.ts` records the latest provider status and selected response headers via `after_provider_response`
-- the extra provider diagnostics stay hidden by default
-- set `PI_TOOLS_CONTEXT_HEALTH_PROVIDER_DEBUG=1` to append them to `/context-health`
+What this repo does with that now:
+- no required code change; existing handlers remain compatible.
 
-Why it matters:
-- this gives a low-noise path for debugging rate limits, request ids, and cache-adjacent behavior without patching Pi internals
-- normal `context-health` output stays unchanged unless the explicit debug flag is enabled
+Useful follow-up:
+- `structured-compaction` can optionally use `reason` and `willRetry` to distinguish manual compaction from overflow retry compaction in reports and metrics.
+- `model-system-prompt` and `context-files` can optionally use `ctx.getSystemPromptOptions()` for diagnostics instead of parsing prompt text.
 
-Repo surfaces:
-- `extensions/context-health.ts`
-- `scripts/test-context-health.ts`
-
-### OpenAI Codex / Responses / Prompt Caching
+### Project Trust
 
 Relevant versions:
-- `0.67.6`
-- `0.67.2`
-- `0.67.1`
+- `0.79.0`
+- `0.79.1`
 
 What changed upstream:
-- prompt caching was fixed for non-default OpenAI-compatible base URLs by always sending `session_id` and `x-client-request-id` when a session id is present
-- OpenAI Responses / Codex SSE requests now align `prompt_cache_key`, `session_id`, and `x-client-request-id` more consistently for cache affinity
-- OpenAI Codex Responses requests now forward configured `serviceTier`
-- new session ids use UUIDv7
+- Pi now gates project-local settings, resources, instructions, and packages behind project trust.
+- extensions can inspect trust via `ctx.isProjectTrusted()` and global/CLI extensions can participate through `project_trust`.
 
-Why it matters here:
-- `structured-compaction` depends heavily on OpenAI / Codex Responses semantics, session ids, and cache affinity
-- `context-health` reads cache-related usage and benefits when core caching semantics are more stable
-- these changes are especially relevant for `openai-codex` users and for any future proxy / custom `baseUrl` setups
+What this repo does with that now:
+- no required code change for installed trusted package use.
+
+Risk:
+- project-local installs or `.pi/context-files.json` changes may depend on the user accepting project trust first.
+
+### Markdown, TUI, And Hyperlink Rendering
+
+Relevant versions:
+- `0.74.1`
+- `0.78.0`
+- `0.79.2`
+- `0.79.9`
+
+What changed upstream:
+- Pi TUI markdown rendering, loose lists, code-fence streaming, OSC 8 file links, inline images, overlays, theme handling, and CJK wrapping changed across the range.
+
+What this repo does with that now:
+- `file-footnotes` still patches Pi's assistant markdown renderer for file links only.
+- tests cover current visible output, but a real interactive smoke test is still required because this extension depends on internal renderer details.
 
 Repo surfaces:
-- `extensions/structured-compaction/index.ts`
-- `extensions/structured-compaction/responses-adapter.ts`
-- `extensions/context-health.ts`
+- `extensions/file-footnotes.ts`
+- `scripts/test-file-footnotes.ts`
+
+### Provider, Model, And Prompt Cache Changes
+
+Relevant versions:
+- `0.72.0` through `0.79.10`
+
+What changed upstream:
+- `thinkingLevelMap` replaced `reasoningEffortMap` for custom provider metadata.
+- multiple provider/model metadata updates landed, including OpenAI/OpenAI Codex GPT-5.4/GPT-5.5 context windows, OpenCode/Kimi, GLM, Claude Fable 5, Mistral caching, Together AI, NVIDIA NIM, Ant Ling, OpenRouter Fusion, and Xiaomi provider changes.
+- prompt/cache/session behavior changed for several providers.
+
+What this repo does with that now:
+- no custom provider definitions use `reasoningEffortMap`, so no migration is needed.
+- `structured-compaction` remains high-risk for OpenAI/Codex Responses because it imports an internal `openai-responses-shared.js` helper and calls remote compact endpoints directly.
+
+Repo surfaces:
+- `extensions/structured-compaction/**`
+- `defaults/model-system-prompts/**`
 - `defaults/structured-compaction/README.md`
+- `extensions/context-health.ts`
 
-## Still Useful 0.67.x Options
+## Still Useful 0.79.x Options
 
-### `--no-context-files`
-
-Version:
-- `0.67.4`
-
-Useful here for:
-- clean runs when testing `context-files`
-- separating Pi-core AGENTS/CLAUDE loading from extension-side prompt filtering
-
-### Multiple `--append-system-prompt` Flags
+### `CONFIG_DIR_NAME`
 
 Version:
-- `0.67.2`
+- `0.79.7`
 
-Useful here for:
-- quick prompt experiments before changing `model-system-prompt`
-- temporary A/B checks without editing seeded runtime files
+Potential use here:
+- replace hardcoded `.pi` in `context-files` with Pi's exported project config directory constant.
+
+Current recommendation:
+- optional cleanup only; keeping `.pi` is compatible with current Pi defaults.
+
+### Compaction `reason` / `willRetry`
+
+Version:
+- `0.79.10`
+
+Potential use here:
+- improve structured-compaction reports and avoid treating overflow retry compactions the same as manual `/compact` runs.
+
+Current recommendation:
+- optional improvement after a live structured-compaction smoke test.
 
 ## Suggested Rechecks For Future Pi Upgrades
 
-If this repo upgrades Pi beyond `0.67.6`, re-check these areas first:
-- `file-footnotes` against assistant markdown and hyperlink behavior, especially under tmux/screen and across `/reload`
-- `context-files` if Pi changes context-file discovery rules again
-- `structured-compaction` and `context-health` on `openai-codex` for cache/session-id behavior
-- package install/update flows for the local and git package paths this repo relies on
+Re-check these areas first:
+- `file-footnotes` against assistant markdown internals, OSC 8 file links, streaming code fences, themes, and `/reload`
+- `context-files` if Pi changes `<project_context>` or context-file XML formatting again
+- `structured-compaction` against OpenAI/Codex Responses payload conversion, remote compact endpoints, session ids, prompt cache keys, and `before_provider_request`
+- `context-health` against provider usage/cached-token accounting and Pi's native footer cache-hit display
+- package install/update behavior for git and npm package specs
 
 ## Current Recommendation
 
-Pi `0.67.6` is now a validated baseline for this repo.
+Pi `0.79.10` is the reviewed target for this repo.
 
-The main remaining compatibility risk is still `file-footnotes`, not because non-file links drift from Pi core anymore, but because the extension still patches assistant-message rendering to add file-only footnotes and collapse behavior.
+A small compatibility patch is required for this worktree: migrate package scopes to `@earendil-works/*` and support Pi's XML system prompt context boundaries. The main remaining manual validation risk is `file-footnotes` renderer patching and authenticated `structured-compaction` on OpenAI Codex Responses.

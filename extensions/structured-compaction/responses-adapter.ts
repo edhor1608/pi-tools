@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
 import type {
 	JsonValue,
 	StructuredCompactionConfig,
@@ -11,8 +12,6 @@ import type {
 	StructuredRemoteReplacement,
 } from "./types.ts";
 
-const RESPONSES_SHARED_MODULE_PATH =
-	"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -30,8 +29,46 @@ type ResponsesSharedModule = {
 
 let responsesSharedModulePromise: Promise<ResponsesSharedModule> | undefined;
 
+const resolvePackageRoot = async (specifier: string): Promise<string | undefined> => {
+	let current = dirname(fileURLToPath(await import.meta.resolve(specifier)));
+	for (let i = 0; i < 5; i++) {
+		const packageJsonPath = join(current, "package.json");
+		if (existsSync(packageJsonPath)) return current;
+		const parent = dirname(current);
+		if (parent === current) return undefined;
+		current = parent;
+	}
+	return undefined;
+};
+
+const resolvePackageJsonPath = async (specifier: string): Promise<string | undefined> => {
+	const packageRoot = await resolvePackageRoot(specifier);
+	return packageRoot ? join(packageRoot, "package.json") : undefined;
+};
+
+const resolveResponsesSharedModulePath = async (): Promise<string> => {
+	const entryPath = fileURLToPath(await import.meta.resolve("@earendil-works/pi-ai"));
+	const entryDir = dirname(entryPath);
+	const packageRoot = await resolvePackageRoot("@earendil-works/pi-ai");
+	const candidates = [
+		join(entryDir, "providers", "openai-responses-shared.js"),
+		join(entryDir, "api", "openai-responses-shared.js"),
+		...(packageRoot
+			? [
+					join(packageRoot, "dist", "providers", "openai-responses-shared.js"),
+					join(packageRoot, "dist", "api", "openai-responses-shared.js"),
+				]
+			: []),
+	];
+	const found = candidates.find((path) => existsSync(path));
+	if (found) return found;
+	throw new Error(`Unable to resolve openai-responses-shared.js. Checked: ${candidates.join(", ")}`);
+};
+
 const loadResponsesSharedModule = async (): Promise<ResponsesSharedModule> => {
-	responsesSharedModulePromise ||= import(pathToFileURL(RESPONSES_SHARED_MODULE_PATH).href) as Promise<ResponsesSharedModule>;
+	responsesSharedModulePromise ||= resolveResponsesSharedModulePath().then(
+		(modulePath) => import(pathToFileURL(modulePath).href) as Promise<ResponsesSharedModule>,
+	);
 	return responsesSharedModulePromise;
 };
 
@@ -99,14 +136,11 @@ const extractCodexAccountId = (token: string): string | undefined => {
 	return typeof accountId === "string" && accountId.length > 0 ? accountId : undefined;
 };
 
-const buildUserAgent = (): string => {
+const buildUserAgent = async (): Promise<string> => {
 	try {
-		const packageJson = JSON.parse(
-			readFileSync(
-				"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/package.json",
-				"utf8",
-			),
-		) as { version?: string };
+		const packageJsonPath = await resolvePackageJsonPath("@earendil-works/pi-coding-agent");
+		if (!packageJsonPath) return "pi-structured-compaction";
+		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string };
 		const version = packageJson.version || "unknown";
 		return `pi-structured-compaction/${version}`;
 	} catch {
@@ -114,13 +148,13 @@ const buildUserAgent = (): string => {
 	}
 };
 
-const buildRemoteHeaders = (
+const buildRemoteHeaders = async (
 	model: Model<any>,
 	auth: { apiKey: string; headers?: Record<string, string>; authMode: StructuredRemoteAuthMode; accountId?: string },
 	config: StructuredCompactionConfig,
 	sessionId: string,
 	api: StructuredRemoteApi,
-): Headers => {
+): Promise<Headers> => {
 	const headers = new Headers();
 	for (const source of [model.headers, auth.headers]) {
 		if (!source) continue;
@@ -135,7 +169,7 @@ const buildRemoteHeaders = (
 		headers.set(CODEX_ACCOUNT_ID_HEADER, auth.accountId || "");
 		headers.set("originator", config.backend.remote.originator);
 		headers.set("OpenAI-Beta", "responses=experimental");
-		headers.set("User-Agent", buildUserAgent());
+		headers.set("User-Agent", await buildUserAgent());
 		headers.set("session_id", sessionId);
 	}
 	return headers;
@@ -228,7 +262,7 @@ export const requestCodexRemoteCompaction = async (
 	const { endpoint, api } = resolveResponsesCompactEndpoint(model, config);
 	const auth = await resolveCodexRemoteAuth(ctx, model);
 	const promptCacheKey = sessionId;
-	const headers = buildRemoteHeaders(model, auth, config, sessionId, api);
+	const headers = await buildRemoteHeaders(model, auth, config, sessionId, api);
 	const reasoningEffort =
 		config.backend.reasoning === "off" ? "none" : config.backend.reasoning;
 	const body: Record<string, JsonValue> = {

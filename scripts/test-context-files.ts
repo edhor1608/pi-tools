@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import contextFilesExtension, { discoverContextFiles, filterSystemPrompt } from "../extensions/context-files.ts";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
+const piCodingAgentEntry = new URL(await import.meta.resolve("@earendil-works/pi-coding-agent"));
 const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
 const { buildSystemPrompt } = await import(pathToFileURL(join(piCodingAgentDistDir, "core", "system-prompt.js")).href);
 
@@ -73,8 +73,11 @@ if (filteredPrompt.includes("GLOBAL RULES")) {
 if (!filteredPrompt.includes("WORKSPACE RULES") || !filteredPrompt.includes("PROJECT RULES")) {
 	throw new Error("enabled ancestor and project context files should remain in the final system prompt");
 }
-if (!filteredPrompt.includes("# Project Context")) {
+if (!filteredPrompt.includes("<project_context>")) {
 	throw new Error("expected project context section to remain while at least one file is enabled");
+}
+if (!filteredPrompt.includes(`<project_instructions path="${workspacePath}">`)) {
+	throw new Error("expected filtered XML context files to keep Pi's project_instructions path attribute shape");
 }
 
 writeFileSync(
@@ -89,7 +92,7 @@ if (typeof emptyContextPrompt !== "string") {
 if (emptyContextPrompt.includes("GLOBAL RULES") || emptyContextPrompt.includes("WORKSPACE RULES") || emptyContextPrompt.includes("PROJECT RULES")) {
 	throw new Error("all disabled context files should be removed");
 }
-if (emptyContextPrompt.includes("# Project Context")) {
+if (emptyContextPrompt.includes("<project_context>")) {
 	throw new Error("project context section should be removed when all files are disabled");
 }
 if (!emptyContextPrompt.includes("Current date:")) {
@@ -104,7 +107,7 @@ console.log(
 			filteredHasWorkspace: filteredPrompt.includes("WORKSPACE RULES"),
 			filteredHasProject: filteredPrompt.includes("PROJECT RULES"),
 			filteredHasGlobal: filteredPrompt.includes("GLOBAL RULES"),
-			emptyContextHasSection: emptyContextPrompt.includes("# Project Context"),
+			emptyContextHasSection: emptyContextPrompt.includes("<project_context>"),
 		},
 		null,
 		2,

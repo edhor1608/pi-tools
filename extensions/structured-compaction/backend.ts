@@ -1,7 +1,7 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { complete } from "@mariozechner/pi-ai";
-import type { Model } from "@mariozechner/pi-ai";
-import { convertToLlm, serializeConversation, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { complete } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
+import { convertToLlm, serializeConversation, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	convertAgentMessagesToResponsesInput,
 	isCodexRemoteCompatibleModel,
