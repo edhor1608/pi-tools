@@ -1,6 +1,6 @@
-import type { AuthCredential } from "@mariozechner/pi-coding-agent";
-import { AuthStorage, type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import type { AuthCredential } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 
 const STATUS_KEY = "context-health";
 const CUSTOM_TYPE = "context-health";
