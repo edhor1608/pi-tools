@@ -12,7 +12,7 @@ Structured compaction, file footnotes, and stash were built against Pi `0.73.x` 
 - Updated Codex compact headers/body and propagated summary usage, token estimates, trigger metadata, and fallback diagnostics.
 - Kept stash behavior while aligning shared UI helper types with current contexts.
 - Moved compaction reports to display-only custom entries.
-- Updated context-health auth lookup as required by the package-wide scope migration.
+- Removed context-health, context-files, model-system-prompt, and notify from the package.
 
 ## Verification
 
@@ -23,14 +23,11 @@ Passed:
 - `bun run test:stash-release`
 - `bun run test:structured-compaction`
 - `bun run test:packaged-defaults-fallback`
-- `bun ./scripts/test-context-health.ts`
-- import of all seven extension modules
-- isolated Pi `0.82.1` load of the three requested extensions
+- import of all three extension modules
+- isolated Pi `0.82.1` load of all package extensions
 - live `openai-codex/gpt-5.6-sol` compact canary; output contained `message` and `compaction_summary` items plus usage
 
 ## What did not work
-
-The pre-existing `test:context-files` assertion fails against Pi `0.82.1`: the disabled global context fragment remains in the filtered prompt. Context-files behavior was not part of this port, so it was not changed. The failure should be handled as a separate test-first port.
 
 A mechanical scope replacement alone also failed typecheck because `complete()` moved to `pi-ai/compat`, assistant-message unions narrowed, stash command/shortcut contexts diverged, and the old Responses converter path was no longer valid.
 

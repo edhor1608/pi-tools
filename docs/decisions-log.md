@@ -1,5 +1,25 @@
 # Decisions Log
 
+## 2026-07-29 Reduce Package To Three Extensions
+
+### Context
+
+The package had grown to seven extensions, but only file footnotes, stash, and structured compaction are wanted in the active setup. Keeping disabled code still installs dependencies, expands the maintenance surface, and makes every Pi upgrade broader than necessary.
+
+### Decision
+
+Remove context-health, context-files, model-system-prompt, and notify completely from package resources, source, tests, defaults, and current documentation. Keep historical decisions in this log as superseded records. Remove seeded global model-system-prompt files from the active Pi installation.
+
+This supersedes **2026-04-12 Context Health Extension**, **2026-04-13 Notify Extension**, and **2026-04-14 Context Files Extension**.
+
+### Rationale
+
+Three maintained extensions are simpler than seven installed-but-filtered extensions. Deletion also removes the unrelated context-files compatibility failure and avoids carrying model prompt defaults for models that are no longer active.
+
+### Consequences
+
+Installing `pi-tools` now exposes exactly three resources. Context-file filtering, context-health telemetry, package-owned model prompts, terminal title animation, and native completion notifications are no longer provided. Existing session history is retained because it is user data, not installed extension state.
+
 ## 2026-07-29 Pi 0.82 Port And Public File Footnotes
 
 ### Context

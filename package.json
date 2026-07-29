@@ -1,7 +1,7 @@
 {
   "name": "@stead/pi-tools",
   "version": "0.1.0",
-  "description": "Context-quality extensions for Pi: model prompts, context-file control, file-link footnotes, notifications, stash prompts, context health, and structured compaction",
+  "description": "Focused Pi extensions for file-link footnotes, deferred prompts, and structured compaction",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -20,13 +20,9 @@
     "pi",
     "stead",
     "context",
-    "context-files",
     "compaction",
-    "system-prompt",
     "workflow",
     "stash",
-    "notification",
-    "terminal-title",
     "file-links",
     "footnotes",
     "rendering"
@@ -45,7 +41,6 @@
     "check": "bun run typecheck && bun run test:file-footnotes && bun run test:stash-release && bun run test:structured-compaction",
     "analyze": "bun ./scripts/analyze-session.ts",
     "test:stash-release": "bun ./scripts/test-stash-release.ts",
-    "test:context-files": "bun ./scripts/test-context-files.ts",
     "test:file-footnotes": "bun ./scripts/test-file-footnotes.ts",
     "test:structured-compaction": "bun ./scripts/test-structured-compaction.ts",
     "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts",
@@ -63,11 +58,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/model-system-prompt.ts",
-      "./extensions/context-health.ts",
-      "./extensions/context-files.ts",
       "./extensions/file-footnotes.ts",
-      "./extensions/notify.ts",
       "./extensions/stash.ts",
       "./extensions/structured-compaction/index.ts"
     ]
