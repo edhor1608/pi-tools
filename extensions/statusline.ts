@@ -1,7 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ const CACHE_PATH = join(PI_AGENT_DIR, "pi-statusline-cache.json");
 const AUTH_PATH = join(PI_AGENT_DIR, "auth.json");
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage";
 const CODEX_USAGE_TTL_MS = 60_000;
+const LOCATION_TTL_MS = 2_000;
 const LIMIT_HEADER_TTL_MS = 6 * 60 * 60 * 1000;
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const CODEX_ACCOUNT_ID_HEADER = "chatgpt-account-id";
@@ -54,6 +55,7 @@ let enabled = true;
 let cache: Cache = readCache();
 let requestRender: (() => void) | undefined;
 let usageRefresh: Promise<void> | undefined;
+let locationCache: { cwd: string; dir: string; dirty: boolean; checkedAt: number; refresh?: Promise<void> } | undefined;
 
 export default function statuslineExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
@@ -71,10 +73,12 @@ export default function statuslineExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("after_provider_response", (event, ctx) => {
-		const limits = limitsFromHeaders(event.headers, Date.now());
-		if (limits.length > 0) {
-			cache = { ...cache, limits, lastError: undefined };
-			writeCache(cache);
+		if (ctx.model?.provider === "openai-codex") {
+			const limits = limitsFromHeaders(event.headers, Date.now());
+			if (limits.length > 0) {
+				cache = { ...cache, limits, lastError: undefined };
+				writeCache(cache);
+			}
 		}
 		void refreshCodexUsage(ctx);
 		requestRender?.();
@@ -117,7 +121,7 @@ function installFooter(ctx: PiContext): void {
 					renderContext(ctx, theme),
 					renderTotals(ctx, theme),
 					renderModel(ctx, theme),
-					renderLimits(theme),
+					renderLimits(theme, ctx),
 				].filter((part) => part.length > 0);
 				return [truncateToWidth(parts.join(theme.fg("dim", "  │  ")), width)];
 			},
@@ -126,8 +130,10 @@ function installFooter(ctx: PiContext): void {
 }
 
 function renderLocation(ctx: PiContext, theme: RenderTheme, branch: string | null): string {
-	const dir = shortCwd(ctx.cwd);
-	const git = branch ? `  ${branch}${isGitDirty(ctx.cwd) ? " *" : ""}` : "";
+	void refreshLocation(ctx.cwd);
+	const location = locationCache?.cwd === ctx.cwd ? locationCache : undefined;
+	const dir = location?.dir ?? basename(ctx.cwd);
+	const git = branch ? `  ${branch}${location?.dirty ? " *" : ""}` : "";
 	return `${theme.fg("accent", dir)}${theme.fg("dim", git)}`;
 }
 
@@ -161,7 +167,8 @@ function renderModel(ctx: PiContext, theme: RenderTheme): string {
 	return theme.fg("dim", `${model}${thinking}`);
 }
 
-function renderLimits(theme: RenderTheme): string {
+function renderLimits(theme: RenderTheme, ctx?: PiContext): string {
+	if (ctx && ctx.model?.provider !== "openai-codex") return "";
 	const usage = freshCodexUsage();
 	if (usage) return renderCodexUsage(theme, usage);
 
@@ -176,8 +183,7 @@ function renderLimits(theme: RenderTheme): string {
 	const stale = now - bucket.observedAt > LIMIT_HEADER_TTL_MS;
 	const reset = bucket.resetAt ? ` ↻${formatTime(bucket.resetAt)}` : "";
 	const warning = usedPct >= 90 ? "warning" : usedPct >= 75 ? "accent" : "success";
-	const assumption = limitAssumption(bucket, now);
-	const suffix = stale ? " stale" : assumption || reset;
+	const suffix = stale ? " stale" : reset;
 	return `${theme.fg("dim", `Codex ${label}`)} ${limitBar(usedPct)} ${theme.fg(warning, `${usedPct}%`)}${theme.fg("dim", suffix)}`;
 }
 
@@ -197,10 +203,10 @@ function renderCodexUsageWindow(theme: RenderTheme, window: CodexUsageWindow): s
 async function refreshCodexUsage(ctx: PiContext, force = false): Promise<void> {
 	if (ctx.model?.provider !== "openai-codex") return;
 	if (!force && freshCodexUsage()) return;
-	if (usageRefresh) return usageRefresh;
+	if (usageRefresh && !force) return usageRefresh;
 	usageRefresh = doRefreshCodexUsage(ctx)
 		.catch((error: unknown) => {
-			cache = { ...cache, lastError: error instanceof Error ? error.message : String(error) };
+			cache = { ...cache, lastError: shortError(error) };
 			writeCache(cache);
 		})
 		.finally(() => {
@@ -212,14 +218,25 @@ async function refreshCodexUsage(ctx: PiContext, force = false): Promise<void> {
 
 async function doRefreshCodexUsage(ctx: PiContext): Promise<void> {
 	if (!ctx.model) return;
-	const credential = readStoredCodexCredential() ?? (await resolveModelCodexCredential(ctx));
-	if (!credential) throw new Error("OpenAI Codex auth unavailable");
+	const credentials = [await resolveModelCodexCredential(ctx), readStoredCodexCredential()].filter(
+		(credential): credential is { access: string; accountId: string } => Boolean(credential),
+	);
+	if (credentials.length === 0) throw new Error("OpenAI Codex auth unavailable");
 
-	const payload = await fetchCodexUsageWithPython(credential);
-	const usage = codexUsageFromResponse(payload, Date.now());
-	if (!usage) throw new Error("Codex usage response did not include a primary rate-limit window");
-	cache = { ...cache, codexUsage: usage, lastError: undefined };
-	writeCache(cache);
+	let lastError: unknown;
+	for (const credential of credentials) {
+		try {
+			const payload = await fetchCodexUsageWithPython(credential);
+			const usage = codexUsageFromResponse(payload, Date.now());
+			if (!usage) throw new Error("Codex usage response did not include a primary rate-limit window");
+			cache = { ...cache, codexUsage: usage, lastError: undefined };
+			writeCache(cache);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function fetchCodexUsageWithPython(credential: { access: string; accountId: string }): Promise<unknown> {
@@ -239,8 +256,7 @@ try:
     with urllib.request.urlopen(request, timeout=10) as response:
         sys.stdout.write(response.read().decode("utf-8"))
 except urllib.error.HTTPError as error:
-    body = error.read(500).decode("utf-8", "replace")
-    raise SystemExit(f"HTTP {error.code}: {body}")
+    raise SystemExit(f"HTTP {error.code}")
 `;
 	const input = JSON.stringify({ url: CODEX_USAGE_URL, ...credential });
 	const output = await runPython(script, input);
@@ -335,24 +351,12 @@ function limitsFromHeaders(headers: Record<string, string | string[] | undefined
 function freshestLimit(limits: LimitBucket[]): LimitBucket | undefined {
 	const fresh = limits.filter((limit) => Date.now() - limit.observedAt <= LIMIT_HEADER_TTL_MS);
 	const usable = fresh.length > 0 ? fresh : limits;
-	return usable.sort((a, b) => utilization(b) - utilization(a))[0];
+	return [...usable].sort((a, b) => utilization(b) - utilization(a))[0];
 }
 
 function freshCodexUsage(): CodexUsage | undefined {
 	const usage = cache.codexUsage;
-	return usage && Date.now() - usage.fetchedAt <= CODEX_USAGE_TTL_MS * 5 ? usage : undefined;
-}
-
-function limitAssumption(bucket: LimitBucket, now: number): string {
-	if (!bucket.resetAt || bucket.remaining <= 0) return "";
-	const windowStart = bucket.resetAt - 5 * 60 * 60 * 1000;
-	const elapsedMinutes = (now - windowStart) / 60000;
-	const used = bucket.limit - bucket.remaining;
-	if (elapsedMinutes < 2 || used <= 0) return ` ↻${formatTime(bucket.resetAt)}`;
-	const perMinute = used / elapsedMinutes;
-	const eta = now + (bucket.remaining / perMinute) * 60000;
-	if (eta >= bucket.resetAt) return ` safe ↻${formatTime(bucket.resetAt)}`;
-	return ` ⚠ ~${formatTime(eta)} +${Math.round((perMinute / bucket.limit) * 60 * 100)}%/h`;
+	return usage && Date.now() - usage.fetchedAt <= CODEX_USAGE_TTL_MS ? usage : undefined;
 }
 
 function contextBar(used: number, max: number): string {
@@ -395,27 +399,48 @@ function contextColor(theme: RenderTheme, pct: number, text: string): string {
 	return theme.fg("success", text);
 }
 
-function shortCwd(cwd: string): string {
-	try {
-		const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-			cwd,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
-		if (root && cwd !== root && cwd.startsWith(`${root}/`)) {
-			const parts = cwd.slice(root.length + 1).split("/");
-			return parts.length <= 2 ? parts.join("/") : `…/${parts.slice(-2).join("/")}`;
-		}
-	} catch {}
-	return cwd.split("/").filter(Boolean).pop() ?? cwd;
+function refreshLocation(cwd: string): Promise<void> | undefined {
+	const now = Date.now();
+	if (locationCache?.cwd === cwd && now - locationCache.checkedAt < LOCATION_TTL_MS) return locationCache.refresh;
+	if (locationCache?.cwd === cwd && locationCache.refresh) return locationCache.refresh;
+	const fallback = locationCache?.cwd === cwd ? locationCache : { cwd, dir: basename(cwd), dirty: false, checkedAt: now };
+	const refresh = loadLocation(cwd)
+		.then((location) => {
+			locationCache = { ...location, refresh: undefined };
+		})
+		.catch(() => {
+			locationCache = { ...fallback, checkedAt: Date.now(), refresh: undefined };
+		})
+		.finally(() => requestRender?.());
+	locationCache = { ...fallback, refresh };
+	return refresh;
 }
 
-function isGitDirty(cwd: string): boolean {
-	try {
-		return execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().length > 0;
-	} catch {
-		return false;
+async function loadLocation(cwd: string): Promise<{ cwd: string; dir: string; dirty: boolean; checkedAt: number }> {
+	const [root, dirtyOutput] = await Promise.all([
+		gitOutput(cwd, ["rev-parse", "--show-toplevel"]),
+		gitOutput(cwd, ["status", "--porcelain"]),
+	]);
+	const trimmedRoot = root.trim();
+	let dir = basename(cwd);
+	if (trimmedRoot && cwd !== trimmedRoot && cwd.startsWith(`${trimmedRoot}/`)) {
+		const parts = cwd.slice(trimmedRoot.length + 1).split("/");
+		dir = parts.length <= 2 ? parts.join("/") : `…/${parts.slice(-2).join("/")}`;
 	}
+	return { cwd, dir, dirty: dirtyOutput.trim().length > 0, checkedAt: Date.now() };
+}
+
+async function gitOutput(cwd: string, args: string[]): Promise<string> {
+	return await new Promise((resolve, reject) => {
+		execFile("git", args, { cwd, encoding: "utf8" }, (error, stdout) => {
+			if (error) reject(error);
+			else resolve(stdout);
+		});
+	});
+}
+
+function basename(path: string): string {
+	return path.split("/").filter(Boolean).pop() ?? path;
 }
 
 function fmtTokens(value: number): string {
@@ -471,6 +496,8 @@ function readStoredCodexCredential(): { access: string; accountId: string } | un
 		if (!isObject(credential)) return undefined;
 		const access = credential.access;
 		const accountId = credential.accountId;
+		const expires = credential.expires;
+		if (typeof expires === "number" && Date.now() > expires - 60_000) return undefined;
 		return typeof access === "string" && typeof accountId === "string" ? { access, accountId } : undefined;
 	} catch {
 		return undefined;
@@ -518,6 +545,11 @@ function writeCache(next: Cache): void {
 	try {
 		writeFileSync(CACHE_PATH, JSON.stringify(next), "utf8");
 	} catch {}
+}
+
+function shortError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.split("\n", 1)[0]?.slice(0, 120) || "unknown error";
 }
 
 function renderDebug(): string {
