@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-07-29 Pi And Claude Subagents
+
+### Context
+
+The setup needs background agents with isolated context, live control, and durable transcripts. Pi already provides an in-process SDK for agents using the configured model runtime, while the Claude Agent SDK can drive the locally installed and authenticated Claude Code executable through the user's subscription. The reviewed `davis7dotsh/my-pi-setup` demonstrates the desired interaction model, and the user confirmed that its author explicitly permits reuse.
+
+### Decision
+
+Port the reviewed Effect-based implementation as the foundation, with Pi and Claude backends only. Do not add a separate Codex backend because Codex models remain available through Pi. Support automatic result delivery, a compact `/subagents` picker followed by full-screen takeover, streaming, steering, cancellation, separate child sessions, and context-usage display. Do not add `/btw`, an extension-level concurrency limit, custom project trust gating, or sandboxing. Always load project resources for the child working directory. Children run with normal host permissions; Claude runs headlessly without interactive permission prompts. When model or reasoning parameters are omitted, preserve Claude Code defaults; Pi inherits the parent model and thinking level.
+
+### Rationale
+
+Pi and Claude cover the useful model diversity without duplicating Pi's Codex support. Effect scopes and event streams fit the lifecycle complexity of concurrent child sessions, cancellation, and teardown. A hard concurrency limit would impose policy the user does not want; machine resources, provider limits, and explicit cancellation remain the operational bounds.
+
+### Consequences
+
+The extension must treat every child prompt as autonomous privileged execution and clearly expose running work. It must shut down all child scopes deterministically, bound model-facing output, and prevent children from recursively invoking subagent tools. Claude availability depends on an installed, authenticated Claude Code executable and consumes the user's existing subscription allowance.
+
 ## 2026-07-29 Native Node And Oxide Toolchain
 
 ### Context

@@ -1,8 +1,9 @@
 {
 	"name": "@stead/pi-tools",
 	"version": "0.1.0",
-	"description": "Focused Pi extensions for file-link footnotes, deferred prompts, and structured compaction",
+	"description": "Focused Pi extensions for subagents, file-link footnotes, deferred prompts, and structured compaction",
 	"keywords": [
+		"claude",
 		"compaction",
 		"context",
 		"file-links",
@@ -12,6 +13,7 @@
 		"rendering",
 		"stash",
 		"stead",
+		"subagents",
 		"workflow"
 	],
 	"homepage": "https://github.com/edhor1608/pi-tools#readme",
@@ -26,6 +28,7 @@
 	"files": [
 		"extensions",
 		"defaults",
+		"skills",
 		"scripts",
 		"docs",
 		"README.md",
@@ -41,13 +44,22 @@
 		"format": "oxfmt extensions scripts package.json tsconfig.json pnpm-workspace.yaml .oxlintrc.json .oxfmtrc.json",
 		"format:check": "oxfmt --check extensions scripts package.json tsconfig.json pnpm-workspace.yaml .oxlintrc.json .oxfmtrc.json",
 		"lint": "oxlint --deny-warnings .",
-		"test": "node --test \"scripts/*.test.ts\"",
+		"test": "node --test scripts/*.test.ts extensions/*/*.test.ts",
+		"test:live": "node --test extensions/subagents/*.live.ts",
+		"test:live:claude": "node --test extensions/subagents/claude.live.ts",
+		"test:live:pi": "node --test extensions/subagents/pi.live.ts",
 		"check": "pnpm run format:check && pnpm run lint && pnpm test",
 		"analyze": "node ./scripts/analyze-session.ts",
 		"test:stash-release": "node --test scripts/stash-release.test.ts",
 		"test:file-footnotes": "node --test scripts/file-footnotes.test.ts",
 		"test:structured-compaction": "node --test scripts/structured-compaction.test.ts",
 		"test:packaged-defaults-fallback": "node --test scripts/packaged-defaults-fallback.test.ts"
+	},
+	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "0.3.220",
+		"@anthropic-ai/sdk": "0.115.0",
+		"effect": "4.0.0-beta.102",
+		"typebox": "1.3.8"
 	},
 	"devDependencies": {
 		"@types/node": "26.1.2",
@@ -69,8 +81,12 @@
 	"pi": {
 		"extensions": [
 			"./extensions/file-footnotes.ts",
+			"./extensions/subagents/index.ts",
 			"./extensions/stash.ts",
 			"./extensions/structured-compaction/index.ts"
+		],
+		"skills": [
+			"./skills/subagents"
 		]
 	}
 }

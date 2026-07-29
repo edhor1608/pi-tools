@@ -1,3 +1,4 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CompactionEntry, ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { createStructuredCompactionArtifact, computeFileLists, getLatestStructuredCompactionArtifact } from "./artifact.ts";
@@ -7,7 +8,7 @@ import { computeStructuredCompactionMetrics, formatStructuredCompactionStats } f
 import { buildStructuredCompactionReport, formatStructuredCompactionReport, formatStructuredCompactionReportPreview } from "./report.ts";
 import { convertAgentMessagesToResponsesInput, normalizeRemoteOutputItemsForInput } from "./responses-adapter.ts";
 import { renderStructuredReplacementMessages } from "./renderer.ts";
-import type { StructuredCompactionInput } from "./types.ts";
+import type { StructuredCompactionArtifact, StructuredCompactionInput } from "./types.ts";
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const REPORT_MODES = ["latest", "all"] as const;
@@ -19,6 +20,11 @@ interface StructuredCompactionReportEntry {
 	mode: StructuredCompactionReportMode;
 	preview: string;
 	timestamp: number;
+}
+
+interface ProviderRequestContext {
+	model: Model<Api>;
+	artifact: StructuredCompactionArtifact;
 }
 
 const notifyWarning = (enabled: boolean, notify: (message: string, type?: "info" | "warning" | "error") => void, message: string) => {
@@ -55,6 +61,8 @@ const triggerCompaction = async (ctx: ExtensionCommandContext, label: string, cu
 };
 
 export default function structuredCompactionExtension(pi: ExtensionAPI) {
+	let providerRequestContext: ProviderRequestContext | undefined;
+
 	pi.registerEntryRenderer<StructuredCompactionReportEntry>("structured-compaction-report", (entry, options, theme) => {
 		const report = entry.data;
 		if (!report) return undefined;
@@ -181,14 +189,22 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("context", async (event, ctx) => {
-		const config = await loadStructuredCompactionConfig(ctx.cwd);
+		providerRequestContext = undefined;
+		const cwd = ctx.cwd;
+		const model = ctx.model;
+		const branch = ctx.sessionManager.getBranch();
+		const config = await loadStructuredCompactionConfig(cwd);
 		if (!config.enabled) return undefined;
 
-		const latestStructuredCompaction = getLatestStructuredCompactionArtifact(ctx.sessionManager.getBranch());
+		const latestStructuredCompaction = getLatestStructuredCompactionArtifact(branch);
 		if (!latestStructuredCompaction) return undefined;
 
 		const summaryIndex = event.messages.findIndex((message) => message.role === "compactionSummary");
 		if (summaryIndex === -1) return undefined;
+
+		if (model) {
+			providerRequestContext = { model, artifact: latestStructuredCompaction.artifact };
+		}
 
 		return {
 			messages: [
@@ -199,22 +215,16 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("before_provider_request", async (event, ctx) => {
-		const config = await loadStructuredCompactionConfig(ctx.cwd);
-		if (!config.enabled) return undefined;
-		const model = ctx.model;
-		if (!model) return undefined;
+	pi.on("before_provider_request", async (event) => {
+		const prepared = providerRequestContext;
+		if (!prepared) return undefined;
 
-		const latestStructuredCompaction = getLatestStructuredCompactionArtifact(ctx.sessionManager.getBranch());
-		const remoteReplacement = latestStructuredCompaction?.artifact.remoteReplacement;
+		const remoteReplacement = prepared.artifact.remoteReplacement;
 		if (!remoteReplacement) return undefined;
-		if (remoteReplacement.api !== model.api) return undefined;
+		if (remoteReplacement.api !== prepared.model.api) return undefined;
 		if (!isObject(event.payload) || !Array.isArray(event.payload.input)) return undefined;
 
-		const localReplacementInput = await convertAgentMessagesToResponsesInput(
-			model,
-			latestStructuredCompaction.artifact.replacementMessages,
-		);
+		const localReplacementInput = await convertAgentMessagesToResponsesInput(prepared.model, prepared.artifact.replacementMessages);
 		if (event.payload.input.length < localReplacementInput.length) return undefined;
 
 		return {
