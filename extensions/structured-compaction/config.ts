@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { ensurePackagedDefaults } from "../shared/defaults.ts";
 import type { StructuredCompactionConfig, StructuredCompactionPrompts } from "./types.ts";
 
@@ -60,7 +60,7 @@ const readText = (path: string): string | undefined => {
 
 const getRoots = (cwd: string) => ({
 	globalRoot: join(getAgentDir(), ROOT_DIR_NAME),
-	projectRoot: join(cwd, ".pi", ROOT_DIR_NAME),
+	projectRoot: join(cwd, CONFIG_DIR_NAME, ROOT_DIR_NAME),
 });
 
 export const ensureStructuredCompactionDefaults = () =>

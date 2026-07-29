@@ -1,4 +1,5 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Usage } from "@earendil-works/pi-ai";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -52,6 +53,7 @@ export interface StructuredRemoteReplacement {
 	sessionId: string;
 	promptCacheKey: string;
 	outputItems: JsonValue[];
+	usage?: JsonValue;
 }
 
 export interface StructuredCompactionMetrics {
@@ -87,6 +89,8 @@ export interface StructuredCompactionArtifact {
 		compactedMessageCount: number;
 		turnPrefixMessageCount: number;
 		previousArtifactVersion?: number;
+		reason?: "manual" | "threshold" | "overflow";
+		willRetry?: boolean;
 	};
 	remoteReplacement?: StructuredRemoteReplacement;
 	metadata?: Record<string, JsonValue>;
@@ -103,6 +107,8 @@ export interface StructuredCompactionInput {
 	turnPrefixMessages: AgentMessage[];
 	readFiles: string[];
 	modifiedFiles: string[];
+	reason?: "manual" | "threshold" | "overflow";
+	willRetry?: boolean;
 }
 
 export interface CompactionBackendOutput {
@@ -112,4 +118,5 @@ export interface CompactionBackendOutput {
 	metadata?: Record<string, JsonValue>;
 	backendModel?: string;
 	remoteReplacement?: StructuredRemoteReplacement;
+	usage?: Usage;
 }

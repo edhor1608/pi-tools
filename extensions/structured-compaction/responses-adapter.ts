@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { convertToLlm, VERSION, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { convertResponsesMessages as ConvertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import type {
 	JsonValue,
 	StructuredCompactionConfig,
@@ -11,28 +13,19 @@ import type {
 	StructuredRemoteReplacement,
 } from "./types.ts";
 
-const RESPONSES_SHARED_MODULE_PATH =
-	"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const CODEX_ACCOUNT_ID_HEADER = "chatgpt-account-id";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
+const require = createRequire(import.meta.url);
+let responsesConverterPromise: Promise<typeof ConvertResponsesMessages> | undefined;
 
-type ResponsesSharedModule = {
-	convertResponsesMessages: (
-		model: Model<any>,
-		context: { systemPrompt?: string; messages: AgentMessage[]; tools?: unknown },
-		allowedToolCallProviders: Set<string>,
-		options?: { includeSystemPrompt?: boolean },
-	) => unknown[];
-};
-
-let responsesSharedModulePromise: Promise<ResponsesSharedModule> | undefined;
-
-const loadResponsesSharedModule = async (): Promise<ResponsesSharedModule> => {
-	responsesSharedModulePromise ||= import(pathToFileURL(RESPONSES_SHARED_MODULE_PATH).href) as Promise<ResponsesSharedModule>;
-	return responsesSharedModulePromise;
+const loadResponsesConverter = async (): Promise<typeof ConvertResponsesMessages> => {
+	responsesConverterPromise ||= import(
+		pathToFileURL(require.resolve("@earendil-works/pi-ai/api/openai-responses-shared")).href
+	).then((module) => module.convertResponsesMessages as typeof ConvertResponsesMessages);
+	return responsesConverterPromise;
 };
 
 const getHeader = (headers: Record<string, string> | undefined, name: string): string | undefined => {
@@ -48,6 +41,14 @@ const getHeader = (headers: Record<string, string> | undefined, name: string): s
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
+const isJsonValue = (value: unknown): value is JsonValue =>
+	value === null ||
+	typeof value === "boolean" ||
+	typeof value === "number" ||
+	typeof value === "string" ||
+	(Array.isArray(value) && value.every(isJsonValue)) ||
+	(isObject(value) && Object.values(value).every(isJsonValue));
+
 const normalizeBaseUrl = (baseUrl: string | undefined, fallback: string): string => {
 	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : fallback;
 	return raw.replace(/\/+$/, "");
@@ -61,7 +62,7 @@ const resolveCodexResponsesUrl = (baseUrl: string | undefined): string => {
 };
 
 const resolveResponsesCompactEndpoint = (
-	model: Model<any>,
+	model: Model<Api>,
 	config: StructuredCompactionConfig,
 ): { endpoint: string; api: StructuredRemoteApi } => {
 	const endpointMode = config.backend.remote.endpointMode;
@@ -99,23 +100,10 @@ const extractCodexAccountId = (token: string): string | undefined => {
 	return typeof accountId === "string" && accountId.length > 0 ? accountId : undefined;
 };
 
-const buildUserAgent = (): string => {
-	try {
-		const packageJson = JSON.parse(
-			readFileSync(
-				"/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/package.json",
-				"utf8",
-			),
-		) as { version?: string };
-		const version = packageJson.version || "unknown";
-		return `pi-structured-compaction/${version}`;
-	} catch {
-		return "pi-structured-compaction";
-	}
-};
+const buildUserAgent = (): string => `pi-structured-compaction/${VERSION}`;
 
 const buildRemoteHeaders = (
-	model: Model<any>,
+	model: Model<Api>,
 	auth: { apiKey: string; headers?: Record<string, string>; authMode: StructuredRemoteAuthMode; accountId?: string },
 	config: StructuredCompactionConfig,
 	sessionId: string,
@@ -136,7 +124,8 @@ const buildRemoteHeaders = (
 		headers.set("originator", config.backend.remote.originator);
 		headers.set("OpenAI-Beta", "responses=experimental");
 		headers.set("User-Agent", buildUserAgent());
-		headers.set("session_id", sessionId);
+		headers.set("session-id", sessionId);
+		headers.set("x-client-request-id", randomUUID());
 	}
 	return headers;
 };
@@ -152,7 +141,7 @@ const buildFriendlyError = async (response: Response): Promise<string> => {
 	}
 };
 
-export const isCodexRemoteCompatibleModel = (model: Model<any> | undefined): boolean => {
+export const isCodexRemoteCompatibleModel = (model: Model<Api> | undefined): boolean => {
 	if (!model) return false;
 	if (model.provider !== "openai" && model.provider !== "openai-codex") return false;
 	return model.api === "openai-responses" || model.api === "openai-codex-responses";
@@ -160,7 +149,7 @@ export const isCodexRemoteCompatibleModel = (model: Model<any> | undefined): boo
 
 export const resolveCodexRemoteAuth = async (
 	ctx: ExtensionContext,
-	model: Model<any>,
+	model: Model<Api>,
 ): Promise<{
 	apiKey: string;
 	headers?: Record<string, string>;
@@ -191,17 +180,21 @@ export const resolveCodexRemoteAuth = async (
 };
 
 export const convertAgentMessagesToResponsesInput = async (
-	model: Model<any>,
+	model: Model<Api>,
 	messages: AgentMessage[],
-): Promise<unknown[]> => {
+): Promise<JsonValue[]> => {
 	if (messages.length === 0) return [];
-	const { convertResponsesMessages } = await loadResponsesSharedModule();
-	return convertResponsesMessages(
+	const convertResponsesMessages = await loadResponsesConverter();
+	const converted: unknown = convertResponsesMessages(
 		model,
-		{ systemPrompt: "", messages, tools: undefined },
+		{ systemPrompt: "", messages: convertToLlm(messages), tools: undefined },
 		OPENAI_TOOL_CALL_PROVIDERS,
 		{ includeSystemPrompt: false },
 	);
+	if (!Array.isArray(converted) || !converted.every(isJsonValue)) {
+		throw new Error("Responses conversion produced non-JSON input items");
+	}
+	return converted;
 };
 
 export const normalizeRemoteOutputItemsForInput = (outputItems: JsonValue[]): JsonValue[] =>
@@ -219,7 +212,7 @@ export const normalizeRemoteOutputItemsForInput = (outputItems: JsonValue[]): Js
 export const requestCodexRemoteCompaction = async (
 	ctx: ExtensionContext,
 	config: StructuredCompactionConfig,
-	model: Model<any>,
+	model: Model<Api>,
 	instructions: string,
 	inputItems: JsonValue[],
 	sessionId: string,
@@ -229,24 +222,12 @@ export const requestCodexRemoteCompaction = async (
 	const auth = await resolveCodexRemoteAuth(ctx, model);
 	const promptCacheKey = sessionId;
 	const headers = buildRemoteHeaders(model, auth, config, sessionId, api);
-	const reasoningEffort =
-		config.backend.reasoning === "off" ? "none" : config.backend.reasoning;
 	const body: Record<string, JsonValue> = {
 		model: model.id,
 		input: inputItems,
 		instructions,
-		tools: [],
-		parallel_tool_calls: true,
+		prompt_cache_key: promptCacheKey,
 	};
-	if (api === "openai-codex-responses") {
-		body.text = { verbosity: "medium" };
-		if (model.reasoning) {
-			body.reasoning = {
-				effort: reasoningEffort,
-				summary: "auto",
-			};
-		}
-	}
 	const response = await fetch(endpoint, {
 		method: "POST",
 		headers,
@@ -256,9 +237,9 @@ export const requestCodexRemoteCompaction = async (
 	if (!response.ok) {
 		throw new Error(await buildFriendlyError(response));
 	}
-	const json = (await response.json()) as { output?: JsonValue[] };
-	if (!Array.isArray(json.output)) {
-		throw new Error("Remote compaction response did not include output items");
+	const json: unknown = await response.json();
+	if (!isObject(json) || !Array.isArray(json.output) || !json.output.every(isJsonValue)) {
+		throw new Error("Remote compaction response did not include JSON output items");
 	}
 	return {
 		strategy: "responses-compact",
@@ -269,5 +250,6 @@ export const requestCodexRemoteCompaction = async (
 		sessionId,
 		promptCacheKey,
 		outputItems: json.output,
+		usage: isJsonValue(json.usage) ? json.usage : undefined,
 	};
 };

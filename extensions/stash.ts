@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Container, Key, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Container, Key, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { classifyAgentEndState } from "./shared/agent-end-state.ts";
 
 const STATUS_KEY = "stash";
@@ -186,14 +186,14 @@ const sendSnapshotMessage = (pi: ExtensionAPI, state: StashState) => {
 	});
 };
 
-const pickMode = async (ctx: ExtensionCommandContext, initial: StashMode = "manual"): Promise<StashMode | undefined> => {
+const pickMode = async (ctx: ExtensionContext, initial: StashMode = "manual"): Promise<StashMode | undefined> => {
 	if (!ctx.hasUI) return initial;
 	const labels = ["manual", "draft", "send"];
 	const selected = await ctx.ui.select("Stash release mode", labels);
 	return selected === "manual" || selected === "draft" || selected === "send" ? selected : undefined;
 };
 
-const promptForContent = async (ctx: ExtensionCommandContext, title: string, prefill = ""): Promise<string | undefined> => {
+const promptForContent = async (ctx: ExtensionContext, title: string, prefill = ""): Promise<string | undefined> => {
 	if (!ctx.hasUI) return undefined;
 	const text = await ctx.ui.editor(title, prefill);
 	if (text === undefined) return undefined;
@@ -279,7 +279,7 @@ function stashExtension(pi: ExtensionAPI) {
 		await sendNow(ctx, head.id, { requireIdle: false });
 	};
 
-	const showPicker = async (ctx: ExtensionCommandContext): Promise<string | null> => {
+	const showPicker = async (ctx: ExtensionContext): Promise<string | null> => {
 		const items: SelectItem[] = [{ value: "add", label: "+ Add stashed prompt", description: "Save a prompt for later release" }];
 		for (const item of state.items) {
 			items.push({
@@ -321,7 +321,7 @@ function stashExtension(pi: ExtensionAPI) {
 		});
 	};
 
-	const showItemActions = async (ctx: ExtensionCommandContext, item: StashItem): Promise<string | undefined> => {
+	const showItemActions = async (ctx: ExtensionContext, item: StashItem): Promise<string | undefined> => {
 		return ctx.ui.select(`Stash #${item.id}`, [
 			"Edit prompt",
 			"Set manual",
@@ -336,7 +336,7 @@ function stashExtension(pi: ExtensionAPI) {
 		]);
 	};
 
-	const openStashUi = async (ctx: ExtensionCommandContext) => {
+	const openStashUi = async (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) {
 			sendSnapshotMessage(pi, state);
 			return;
@@ -397,7 +397,7 @@ function stashExtension(pi: ExtensionAPI) {
 		}
 	};
 
-	const stashCurrentEditorText = async (ctx: ExtensionCommandContext) => {
+	const stashCurrentEditorText = async (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) {
 			ctx.ui.notify("Stash shortcuts require interactive mode", "warning");
 			return;

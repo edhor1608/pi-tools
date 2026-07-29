@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import type { CompactionEntry, ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { createStructuredCompactionArtifact, computeFileLists, getLatestStructuredCompactionArtifact } from "./artifact.ts";
 import { runStructuredCompactionBackend } from "./backend.ts";
 import {
@@ -21,7 +21,8 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const REPORT_MODES = ["latest", "all"] as const;
 type StructuredCompactionReportMode = (typeof REPORT_MODES)[number];
 
-interface StructuredCompactionReportMessageDetails {
+interface StructuredCompactionReportEntry {
+	content: string;
 	count: number;
 	mode: StructuredCompactionReportMode;
 	preview: string;
@@ -62,17 +63,17 @@ const triggerCompaction = async (ctx: ExtensionCommandContext, label: string, cu
 };
 
 export default function structuredCompactionExtension(pi: ExtensionAPI) {
-	pi.registerMessageRenderer("structured-compaction-report", (message, options, theme) => {
-		const details = message.details as StructuredCompactionReportMessageDetails | undefined;
+	pi.registerEntryRenderer<StructuredCompactionReportEntry>("structured-compaction-report", (entry, options, theme) => {
+		const report = entry.data;
+		if (!report) return undefined;
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-		const modeLabel = details?.mode === "all" ? "All" : "Latest";
-		const title = theme.fg("accent", `Compaction Report (${modeLabel})`);
-		const body = options.expanded ? String(message.content) : details?.preview ?? String(message.content);
+		const title = theme.fg("accent", `Compaction Report (${report.mode === "all" ? "All" : "Latest"})`);
+		const body = options.expanded ? report.content : report.preview;
 		const hint = theme.fg(
 			"dim",
 			options.expanded
-				? `items: ${details?.count ?? 0}`
-				: details?.mode === "all"
+				? `items: ${report.count}`
+				: report.mode === "all"
 					? "Expand for full per-compaction details"
 					: "Expand for provider usage and continuity details",
 		);
@@ -106,17 +107,13 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 				sessionFile: ctx.sessionManager.getSessionFile(),
 				latestOnly: mode !== "all",
 			};
-			pi.sendMessage({
-				customType: "structured-compaction-report",
+			pi.appendEntry("structured-compaction-report", {
 				content: formatStructuredCompactionReport(items, options),
-				display: true,
-				details: {
-					count: items.length,
-					mode,
-					preview: formatStructuredCompactionReportPreview(items, options),
-					timestamp: Date.now(),
-				} satisfies StructuredCompactionReportMessageDetails,
-			});
+				count: items.length,
+				mode,
+				preview: formatStructuredCompactionReportPreview(items, options),
+				timestamp: Date.now(),
+			} satisfies StructuredCompactionReportEntry);
 		},
 	});
 
@@ -146,6 +143,8 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 			turnPrefixMessages: event.preparation.turnPrefixMessages,
 			readFiles,
 			modifiedFiles,
+			reason: event.reason,
+			willRetry: event.willRetry,
 		};
 
 		try {
@@ -166,7 +165,7 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 				firstKeptEntryId: input.firstKeptEntryId,
 				tokensBefore: input.tokensBefore,
 				details: undefined,
-			};
+			} satisfies CompactionEntry;
 			const metrics = computeStructuredCompactionMetrics(
 				event.branchEntries,
 				provisionalCompaction,
@@ -192,6 +191,8 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 					summary: displaySummary,
 					firstKeptEntryId: input.firstKeptEntryId,
 					tokensBefore: input.tokensBefore,
+					estimatedTokensAfter: metrics.afterHeuristic,
+					usage: backendOutput.usage,
 					details: artifact,
 				},
 			};

@@ -1,6 +1,5 @@
-import type { AuthCredential } from "@mariozechner/pi-coding-agent";
-import { AuthStorage, type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import { type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 
 const STATUS_KEY = "context-health";
 const CUSTOM_TYPE = "context-health";
@@ -130,9 +129,9 @@ const decodeJwtPayload = (token: string): Record<string, unknown> | undefined =>
 	}
 };
 
-const getOpenAICodexPlan = (credential: AuthCredential | undefined): string | undefined => {
-	if (!credential || credential.type !== "oauth") return undefined;
-	const payload = decodeJwtPayload(credential.access);
+const getOpenAICodexPlan = (accessToken: string | undefined): string | undefined => {
+	if (!accessToken) return undefined;
+	const payload = decodeJwtPayload(accessToken);
 	const auth = payload?.["https://api.openai.com/auth"];
 	if (!auth || typeof auth !== "object") return undefined;
 	const plan = (auth as Record<string, unknown>).chatgpt_plan_type;
@@ -140,16 +139,16 @@ const getOpenAICodexPlan = (credential: AuthCredential | undefined): string | un
 };
 
 const getAssistantUsageSnapshots = (branch: SessionEntry[]): AssistantUsageSnapshot[] =>
-	branch
-		.filter((entry): entry is Extract<SessionEntry, { type: "message" }> => entry.type === "message")
-		.filter((entry) => entry.message.role === "assistant")
-		.map((entry) => ({
+	branch.flatMap((entry) => {
+		if (entry.type !== "message" || entry.message.role !== "assistant") return [];
+		return [{
 			input: entry.message.usage.input,
 			cacheRead: entry.message.usage.cacheRead,
 			cacheWrite: entry.message.usage.cacheWrite,
 			totalTokens: entry.message.usage.totalTokens,
 			costTotal: entry.message.usage.cost.total,
-		}));
+		}];
+	});
 
 const computeRollingCacheHealth = (branch: SessionEntry[]): CacheHealth => {
 	const snapshots = getAssistantUsageSnapshots(branch)
@@ -230,7 +229,7 @@ const computeRotHealth = (ctx: ExtensionContext, branch: SessionEntry[]): RotHea
 	};
 };
 
-const computeSubscriptionUsage = (ctx: ExtensionContext, branch: SessionEntry[]): SubscriptionUsage => {
+const computeSubscriptionUsage = async (ctx: ExtensionContext, branch: SessionEntry[]): Promise<SubscriptionUsage> => {
 	const model = ctx.model;
 	if (!model) {
 		return {
@@ -250,8 +249,8 @@ const computeSubscriptionUsage = (ctx: ExtensionContext, branch: SessionEntry[])
 		};
 	}
 	const equivalentCost = getAssistantUsageSnapshots(branch).reduce((sum, snapshot) => sum + snapshot.costTotal, 0);
-	const credential = AuthStorage.create().get(model.provider);
-	const plan = model.provider === "openai-codex" ? getOpenAICodexPlan(credential) : undefined;
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	const plan = model.provider === "openai-codex" ? getOpenAICodexPlan(auth.ok ? auth.apiKey : undefined) : undefined;
 	const planPrice = plan ? PLAN_MONTHLY_PRICE_USD[plan] : undefined;
 	if (planPrice !== undefined && planPrice > 0) {
 		const percent = Number(((equivalentCost / planPrice) * 100).toFixed(1));
@@ -284,10 +283,10 @@ const computeSubscriptionUsage = (ctx: ExtensionContext, branch: SessionEntry[])
 	};
 };
 
-const buildSnapshot = (ctx: ExtensionContext): ContextHealthSnapshot => {
+const buildSnapshot = async (ctx: ExtensionContext): Promise<ContextHealthSnapshot> => {
 	const branch = ctx.sessionManager.getBranch();
 	return {
-		subscription: computeSubscriptionUsage(ctx, branch),
+		subscription: await computeSubscriptionUsage(ctx, branch),
 		cache: computeRollingCacheHealth(branch),
 		rot: computeRotHealth(ctx, branch),
 	};
@@ -338,8 +337,8 @@ const buildDetails = (snapshot: ContextHealthSnapshot, providerResponse?: Provid
 	return lines.join("\n");
 };
 
-const updateStatus = (ctx: ExtensionContext) => {
-	const snapshot = buildSnapshot(ctx);
+const updateStatus = async (ctx: ExtensionContext) => {
+	const snapshot = await buildSnapshot(ctx);
 	ctx.ui.setStatus(STATUS_KEY, renderStatusLine(ctx, snapshot));
 };
 
@@ -363,7 +362,7 @@ export default function contextHealthExtension(pi: ExtensionAPI) {
 	pi.registerCommand("context-health", {
 		description: "Show subscription, cache, and rot health for the current branch",
 		handler: async (_args, ctx) => {
-			const snapshot = buildSnapshot(ctx);
+			const snapshot = await buildSnapshot(ctx);
 			const providerResponse = isProviderResponseDebugEnabled() ? lastProviderResponse : undefined;
 			pi.sendMessage({
 				customType: CUSTOM_TYPE,
@@ -379,22 +378,22 @@ export default function contextHealthExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		updateStatus(ctx);
+		await updateStatus(ctx);
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
-		updateStatus(ctx);
+		await updateStatus(ctx);
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		updateStatus(ctx);
+		await updateStatus(ctx);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		updateStatus(ctx);
+		await updateStatus(ctx);
 	});
 
 	pi.on("model_select", async (_event, ctx) => {
-		updateStatus(ctx);
+		await updateStatus(ctx);
 	});
 }

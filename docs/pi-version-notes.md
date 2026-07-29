@@ -1,15 +1,42 @@
 # Pi Version Notes
 
-This repo is currently developed and validated against Pi `0.67.6`.
+This repo is currently developed and validated against Pi `0.82.1`.
 
-The `0.67.0` through `0.67.6` changelog gap was reviewed and revalidated on `2026-04-17`.
-This note keeps the repo-facing changes visible even though the active baseline has now moved to `0.67.6`.
+Sources used for the current review:
+- installed Pi `CHANGELOG.md`, public declarations, docs, and extension examples
+- OpenAI SDK `6.26.0` compact-response declarations bundled with Pi
+- local Pi `0.82.1` typecheck and extension loading
+- live `openai-codex/gpt-5.6-sol` compact-endpoint canary
 
-Source used for this review:
-- upstream `packages/coding-agent/CHANGELOG.md`
-- validated against local Pi install `0.67.6`
+## Adopted 0.82.x Changes
 
-## Adopted 0.67.x Changes
+### Package And Runtime APIs
+
+- all package imports use the `@earendil-works/*` scope introduced after `0.73.x`
+- `complete()` comes from the temporary `@earendil-works/pi-ai/compat` entrypoint
+- model auth uses `getApiKeyAndHeaders()`, including provider-scoped `env` for summary calls
+- the package is typechecked against Pi `>=0.82.1 <0.83.0`
+
+### Structured Compaction
+
+- the Responses converter now comes from the public `@earendil-works/pi-ai/api/openai-responses-shared` export
+- remote compact requests use the official compact body and current Codex `session-id` and `x-client-request-id` headers
+- local summary usage and estimated post-compaction tokens are returned to Pi
+- remote endpoint usage, trigger reason, retry state, and automatic-fallback reason are persisted
+- `/compaction-report` uses a display-only custom entry so reports do not enter model context
+
+### File Footnotes
+
+- the private assistant-renderer monkey patch was removed
+- finalized assistant messages are transformed with the public `message_end` replacement API
+- persisted footnotes are visible after resume/export and no longer depend on TUI prototype state or `/reload`
+
+### Stash
+
+- stash uses current extension/TUI types and one `ExtensionContext` surface for command and shortcut UI flows
+- the existing release-order test passes unchanged
+
+## Historical 0.67.x Changes
 
 ### Assistant Markdown And File Links
 
@@ -124,14 +151,15 @@ Useful here for:
 
 ## Suggested Rechecks For Future Pi Upgrades
 
-If this repo upgrades Pi beyond `0.67.6`, re-check these areas first:
-- `file-footnotes` against assistant markdown and hyperlink behavior, especially under tmux/screen and across `/reload`
+If this repo upgrades Pi beyond `0.82.1`, re-check these areas first:
+- `message_end` replacement and persisted markdown behavior for `file-footnotes`
+- `structured-compaction` against Responses conversion, compact schemas, Codex headers, and WebSocket continuation
+- the temporary `pi-ai/compat` import before that compatibility entrypoint is removed
 - `context-files` if Pi changes context-file discovery rules again
-- `structured-compaction` and `context-health` on `openai-codex` for cache/session-id behavior
-- package install/update flows for the local and git package paths this repo relies on
+- package install/update flows for local and git package paths
 
 ## Current Recommendation
 
-Pi `0.67.6` is now a validated baseline for this repo.
+Pi `0.82.1` is the validated baseline for this repo.
 
-The main remaining compatibility risk is still `file-footnotes`, not because non-file links drift from Pi core anymore, but because the extension still patches assistant-message rendering to add file-only footnotes and collapse behavior.
+The highest remaining compatibility risk is the provider-native compaction boundary. It is covered by a mocked contract test and a live GPT-5.6 Codex canary, but provider payload contracts can change independently of Pi.

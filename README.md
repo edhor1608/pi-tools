@@ -13,7 +13,7 @@ It ships seven separate extensions that improve Pi in different parts of the sam
 
 Together, they make Pi sessions feel more stable, more coherent, and easier to tune without patching Pi core.
 
-Pi version baseline: this repo is currently developed and validated against Pi `0.67.6`.
+Pi version baseline: this repo is currently developed and validated against Pi `0.82.1`.
 Repo-facing Pi integration notes: see [docs/pi-version-notes.md](docs/pi-version-notes.md).
 
 ## What Problem This Solves
@@ -114,7 +114,7 @@ More details:
 If you do not have Pi yet:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 Start Pi once:
@@ -193,7 +193,7 @@ In short: keep Pi's automatic context-file discovery, but decide which files act
 
 Pi renders markdown links inline. That works fine for short web links, but assistant answers that mention many files become hard to read when every bullet also includes a long muted absolute path.
 
-This extension patches assistant-message rendering so file links become numbered footnotes instead.
+This extension rewrites finalized assistant markdown through Pi's public `message_end` hook so file links become numbered footnotes.
 
 Why that is nice:
 - the main sentence stays readable instead of being interrupted by long absolute paths
@@ -202,14 +202,13 @@ Why that is nice:
 - the behavior is automatic once the extension is enabled
 
 Current behavior:
-- assistant file links render inline as `label[1]`, `label[2]`, and so on
-- the inline file label stays directly clickable for normal file or path opening when the terminal supports hyperlinks
-- the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
-- expanded footnotes show the full file target plus a `VS Code` open link for files and directories
-- `/file-footnotes` opens file footnotes from the latest assistant message when terminal hyperlinks are unavailable, with both `open` and `vscode` actions
-- web links and other non-file links stay on Pi's normal markdown rendering, including Pi's own OSC 8 hyperlink handling when supported
+- assistant file links are persisted as `label [1]`, `label [2]`, and so on
+- a visible `File references` list is appended to the same assistant message
+- both inline numbers and reference-list numbers stay clickable
+- `/file-footnotes` opens references from the latest assistant message, with both `open` and `vscode` actions
+- web links, inline code, and fenced code remain unchanged
 
-Implementation note: this is an internal render patch against Pi's assistant markdown component, so it may need adjustment when Pi changes its internal message renderer.
+Implementation note: the transformation uses Pi's public `message_end` replacement API. Footnotes are part of the saved assistant message and therefore remain visible in resumed and exported sessions.
 
 In short: keep file references clickable and visible, but stop them from breaking the reading flow.
 
@@ -350,7 +349,7 @@ Project-local overrides also work under:
 For someone starting from zero, this is the shortest path:
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 pi
 # authenticate with /login or an API key
 pi install git:github.com/edhor1608/pi-tools
@@ -394,13 +393,11 @@ What you should see:
 It works automatically once enabled. If your terminal does not support the links, use `/file-footnotes` as a fallback.
 
 What you should see:
-- file links in assistant answers stay inline as short labels
-- the inline file label still opens the file or path directly in terminals that support hyperlinks
-- the footnote block starts collapsed and can be toggled with `Ctrl+Shift+O`
-- expanded footnotes show the full target plus a `VS Code` open link
-- `/file-footnotes` lets you pick a footnote from the latest assistant message and choose `Open path` or `Open in VS Code`
+- file links in assistant answers become short labels with clickable numbers
+- a visible `File references` list follows the answer
+- `/file-footnotes` lets you pick a reference from the latest assistant message and choose `Open path` or `Open in VS Code`
 - `/file-footnotes open <index>` and `/file-footnotes vscode <index>` also work directly
-- normal web links still render the way Pi normally renders them
+- normal web links and links inside code remain unchanged
 
 ### Context files
 

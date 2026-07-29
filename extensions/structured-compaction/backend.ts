@@ -1,7 +1,8 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { complete } from "@mariozechner/pi-ai";
-import type { Model } from "@mariozechner/pi-ai";
-import { convertToLlm, serializeConversation, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { randomUUID } from "node:crypto";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { complete } from "@earendil-works/pi-ai/compat";
+import type { Api, Model, ProviderEnv } from "@earendil-works/pi-ai";
+import { convertToLlm, serializeConversation, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	convertAgentMessagesToResponsesInput,
 	isCodexRemoteCompatibleModel,
@@ -41,7 +42,7 @@ const xmlBlock = (name: string, content: string | undefined): string | undefined
 	return `<${name}>\n${content}\n</${name}>`;
 };
 
-const resolveConfiguredModel = (ctx: ExtensionContext, modelRef: string): Model<any> | undefined => {
+const resolveConfiguredModel = (ctx: ExtensionContext, modelRef: string): Model<Api> | undefined => {
 	const separator = modelRef.indexOf(MODEL_REF_SEPARATOR);
 	if (separator <= 0 || separator === modelRef.length - 1) return undefined;
 	const provider = modelRef.slice(0, separator);
@@ -52,8 +53,8 @@ const resolveConfiguredModel = (ctx: ExtensionContext, modelRef: string): Model<
 const resolveSummaryModelAndAuth = async (
 	ctx: ExtensionContext,
 	config: StructuredCompactionConfig,
-): Promise<{ model: Model<any>; modelRef: string; apiKey: string; headers?: Record<string, string> }> => {
-	const attempts: Array<{ model: Model<any>; modelRef: string }> = [];
+): Promise<{ model: Model<Api>; modelRef: string; apiKey: string; headers?: Record<string, string>; env?: ProviderEnv }> => {
+	const attempts: Array<{ model: Model<Api>; modelRef: string }> = [];
 	if (config.backend.model) {
 		const configuredModel = resolveConfiguredModel(ctx, config.backend.model);
 		if (!configuredModel) {
@@ -75,6 +76,7 @@ const resolveSummaryModelAndAuth = async (
 				modelRef: attempt.modelRef,
 				apiKey: auth.apiKey,
 				headers: auth.headers,
+				env: auth.env,
 			};
 		}
 	}
@@ -86,7 +88,7 @@ const runPiModelSummary = async (
 	runtime: BackendRuntime,
 ): Promise<CompactionBackendOutput> => {
 	const { ctx, config, prompts, signal } = runtime;
-	const { model, modelRef, apiKey, headers } = await resolveSummaryModelAndAuth(ctx, config);
+	const { model, modelRef, apiKey, headers, env } = await resolveSummaryModelAndAuth(ctx, config);
 
 	const previousReplacementHistory = input.previousArtifact
 		? serializeMessages(input.previousArtifact.replacementMessages)
@@ -135,8 +137,11 @@ const runPiModelSummary = async (
 		{
 			apiKey,
 			headers,
+			env,
 			maxTokens: config.backend.maxTokens,
 			signal,
+			sessionId: randomUUID(),
+			cacheRetention: "none",
 			...(config.backend.reasoning === "off" ? {} : { reasoning: config.backend.reasoning }),
 		},
 	);
@@ -162,6 +167,7 @@ const runPiModelSummary = async (
 			promptSystemPath: prompts.systemPath ?? null,
 			promptCompactPath: prompts.compactPath ?? null,
 		},
+		usage: response.usage,
 	};
 };
 
@@ -225,8 +231,8 @@ const codexRemoteBackend: CompactionBackend = {
 };
 
 const BACKENDS: Record<CompactionBackend["kind"], CompactionBackend> = {
-	[piModelBackend.kind]: piModelBackend,
-	[codexRemoteBackend.kind]: codexRemoteBackend,
+	"pi-model": piModelBackend,
+	"codex-remote": codexRemoteBackend,
 };
 
 export const runStructuredCompactionBackend = async (
@@ -237,10 +243,15 @@ export const runStructuredCompactionBackend = async (
 		try {
 			return await codexRemoteBackend.run(input, runtime);
 		} catch (error) {
-			if (error instanceof RemoteCompactionUnavailableError || error instanceof Error) {
-				return piModelBackend.run(input, runtime);
-			}
-			throw error;
+			if (!(error instanceof Error)) throw error;
+			const fallback = await piModelBackend.run(input, runtime);
+			return {
+				...fallback,
+				metadata: {
+					...fallback.metadata,
+					autoFallbackReason: error.message,
+				},
+			};
 		}
 	}
 	const backend = BACKENDS[runtime.config.backend.kind];
