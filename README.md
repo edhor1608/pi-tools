@@ -62,7 +62,7 @@ Statusline replaces Pi's default footer with a compact Claude-style line:
 - Codex account usage from `https://chatgpt.com/backend-api/codex/usage`
 - both Codex windows when OpenAI reports them, e.g. `5h` and `7d`
 
-The Codex segment uses Pi's existing `openai-codex` OAuth token, caches only non-secret usage data in `~/.pi/agent/pi-statusline-cache.json`, and refreshes at most once per minute. Provider `x-ratelimit-*` headers are still used as a fallback when present. If OpenAI returns only one account window, only that window is shown.
+The Codex segment uses Pi's existing `openai-codex` OAuth token, caches only non-secret usage data in `~/.pi/agent/pi-statusline-cache.json`, and refreshes at most once per minute. Provider `x-ratelimit-*` headers are still used as a fallback when present. If OpenAI returns only one account window, only that window is shown. Account usage fetches require `python3`; if it is unavailable, the footer keeps working and only the Codex usage segment is omitted or shown as unavailable.
 
 Toggle or inspect it at runtime:
 

@@ -56,9 +56,11 @@ let cache: Cache = readCache();
 let requestRender: (() => void) | undefined;
 let usageRefresh: Promise<void> | undefined;
 let locationCache: { cwd: string; dir: string; dirty: boolean; checkedAt: number; refresh?: Promise<void> } | undefined;
+let totalsCache: { input: number; output: number; cost: number } = { input: 0, output: 0, cost: 0 };
 
 export default function statuslineExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
+		updateTotals(ctx);
 		if (enabled) installFooter(ctx);
 		void refreshCodexUsage(ctx);
 	});
@@ -70,6 +72,11 @@ export default function statuslineExtension(pi: ExtensionAPI): void {
 
 	pi.on("thinking_level_select", (_event, ctx) => {
 		if (enabled) installFooter(ctx);
+	});
+
+	pi.on("message_end", (_event, ctx) => {
+		updateTotals(ctx);
+		requestRender?.();
 	});
 
 	pi.on("after_provider_response", (event, ctx) => {
@@ -146,7 +153,12 @@ function renderContext(ctx: PiContext, theme: RenderTheme): string {
 	return `${contextBar(used, max)} ${contextColor(theme, pct, fmtTokens(used))}${theme.fg("dim", `/${fmtTokens(max)}`)}`;
 }
 
-function renderTotals(ctx: PiContext, theme: RenderTheme): string {
+function renderTotals(_ctx: PiContext, theme: RenderTheme): string {
+	if (!totalsCache.input && !totalsCache.output && !totalsCache.cost) return "";
+	return theme.fg("dim", `↑${fmtTokens(totalsCache.input)} ↓${fmtTokens(totalsCache.output)} $${totalsCache.cost.toFixed(3)}`);
+}
+
+function updateTotals(ctx: PiContext): void {
 	let input = 0;
 	let output = 0;
 	let cost = 0;
@@ -157,8 +169,7 @@ function renderTotals(ctx: PiContext, theme: RenderTheme): string {
 		output += message.usage?.output ?? 0;
 		cost += message.usage?.cost?.total ?? 0;
 	}
-	if (!input && !output && !cost) return "";
-	return theme.fg("dim", `↑${fmtTokens(input)} ↓${fmtTokens(output)} $${cost.toFixed(3)}`);
+	totalsCache = { input, output, cost };
 }
 
 function renderModel(ctx: PiContext, theme: RenderTheme): string {
@@ -329,7 +340,8 @@ function codexWindowLabel(windowSeconds: number | undefined): string {
 
 function limitsFromHeaders(headers: Record<string, string | string[] | undefined>, now: number): LimitBucket[] {
 	const get = (name: string): string | undefined => {
-		const value = headers[name] ?? headers[name.toLowerCase()];
+		const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+		const value = entry?.[1];
 		return Array.isArray(value) ? value[0] : value;
 	};
 	const buckets: LimitBucket[] = [];
@@ -360,23 +372,9 @@ function freshCodexUsage(): CodexUsage | undefined {
 }
 
 function contextBar(used: number, max: number): string {
-	const smartCap = 120_000;
-	const bufferCap = 200_000;
-	const smartWidth = 11;
-	const bufferWidth = 4;
-	const dumpWidth = 5;
-	const width = smartWidth + bufferWidth + dumpWidth;
-	let filled: number;
-	if (used <= smartCap) {
-		filled = Math.round((used / smartCap) * smartWidth);
-	} else if (used <= bufferCap) {
-		filled = smartWidth + Math.round(((used - smartCap) / (bufferCap - smartCap)) * bufferWidth);
-	} else {
-		const denom = Math.log(max / bufferCap);
-		const fraction = denom > 0 ? Math.log(used / bufferCap) / denom : 1;
-		filled = smartWidth + bufferWidth + Math.round(Math.min(1, fraction) * dumpWidth);
-	}
-	return zonedBar(filled, width);
+	const width = 20;
+	const fraction = max > 0 ? Math.min(1, Math.max(0, used / max)) : 0;
+	return zonedBar(Math.round(fraction * width), width);
 }
 
 function limitBar(usedPct: number): string {
@@ -535,10 +533,52 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function readCache(): Cache {
 	try {
 		if (!existsSync(CACHE_PATH)) return {};
-		return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as Cache;
+		const parsed: unknown = JSON.parse(readFileSync(CACHE_PATH, "utf8"));
+		return validCache(parsed) ? parsed : {};
 	} catch {
 		return {};
 	}
+}
+
+function validCache(value: unknown): value is Cache {
+	if (!isObject(value)) return false;
+	if (value.lastError !== undefined && typeof value.lastError !== "string") return false;
+	if (value.limits !== undefined && (!Array.isArray(value.limits) || !value.limits.every(validLimitBucket))) return false;
+	if (value.codexUsage !== undefined && !validCodexUsage(value.codexUsage)) return false;
+	return true;
+}
+
+function validLimitBucket(value: unknown): value is LimitBucket {
+	return (
+		isObject(value) &&
+		typeof value.name === "string" &&
+		typeof value.limit === "number" &&
+		typeof value.remaining === "number" &&
+		typeof value.observedAt === "number" &&
+		(value.resetAt === undefined || typeof value.resetAt === "number")
+	);
+}
+
+function validCodexUsage(value: unknown): value is CodexUsage {
+	return (
+		isObject(value) &&
+		Array.isArray(value.windows) &&
+		value.windows.length > 0 &&
+		value.windows.every(validCodexUsageWindow) &&
+		(value.planType === undefined || typeof value.planType === "string") &&
+		(value.creditsAvailable === undefined || typeof value.creditsAvailable === "number") &&
+		typeof value.fetchedAt === "number"
+	);
+}
+
+function validCodexUsageWindow(value: unknown): value is CodexUsageWindow {
+	return (
+		isObject(value) &&
+		typeof value.label === "string" &&
+		typeof value.usedPercent === "number" &&
+		(value.resetAt === undefined || typeof value.resetAt === "number") &&
+		(value.windowSeconds === undefined || typeof value.windowSeconds === "number")
+	);
 }
 
 function writeCache(next: Cache): void {
