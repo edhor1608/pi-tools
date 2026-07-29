@@ -1,7 +1,7 @@
 {
 	"name": "@stead/pi-tools",
 	"version": "0.1.0",
-	"description": "Focused Pi extensions for subagents, file-link footnotes, deferred prompts, and structured compaction",
+	"description": "Focused Pi extensions for subagents, statusline, file-link footnotes, deferred prompts, and structured compaction",
 	"keywords": [
 		"claude",
 		"compaction",
@@ -12,6 +12,7 @@
 		"pi-package",
 		"rendering",
 		"stash",
+		"statusline",
 		"stead",
 		"subagents",
 		"workflow"
@@ -83,6 +84,7 @@
 			"./extensions/file-footnotes.ts",
 			"./extensions/subagents/index.ts",
 			"./extensions/stash.ts",
+			"./extensions/statusline.ts",
 			"./extensions/structured-compaction/index.ts"
 		],
 		"skills": [
