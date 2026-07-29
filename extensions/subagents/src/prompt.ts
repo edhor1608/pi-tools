@@ -11,7 +11,7 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
 /** Guides the parent model to delegate standalone tasks and avoid unnecessary blocking waits. */
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
 	"Use subagent_spawn to delegate self-contained tasks that can run in the background; give it a complete, standalone prompt.",
-	"Pick the subagent harness deliberately: use pi by default and Claude Code when requested or when its independent perspective suits the task.",
+	"Pick the subagent harness deliberately: use pi by default and Claude Code when requested. Claude-family model hints always route to the Claude Code harness, even when pi was requested.",
 	"After subagent_spawn, keep working; results arrive automatically. Only call subagent_wait when you cannot proceed without the result.",
 ];
 
@@ -20,10 +20,10 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
 	prompt: "Task prompt for the subagent. Must be self-contained: include all needed context, file paths, and what to report back.",
 	name: "Short human-readable name for this subagent, shown in listings and the UI",
 	harness:
-		'Harness to run the subagent on: "pi" (in-process Pi session that inherits this environment) or "claude" (Claude Code through the user login).',
+		'Harness to run the subagent on: "pi" (in-process Pi session that inherits this environment) or "claude" (Claude Code through the user login). Claude-family models always route to Claude Code.',
 	workingDir: "Working directory for the autonomous child (default: current working directory)",
 	model:
-		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Omit for the harness default; pi inherits the current model.',
+		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Claude-family hints and the fable/haiku/opus/sonnet aliases auto-route to Claude Code and drop any provider prefix. Omit for the harness default; pi inherits the current model.',
 	reasoningEffort:
 		"Reasoning effort on a shared scale, mapped to Pi thinking levels or Claude thinking budgets. Omit for the harness default; pi inherits the current level.",
 };

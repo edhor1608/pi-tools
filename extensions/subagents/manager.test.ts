@@ -106,6 +106,69 @@ await test("the manager imposes no subagent concurrency limit", async () => {
 	});
 });
 
+await test("Claude models requested through Pi route to Claude Code", async () => {
+	await withManager(async (manager, runtime) => {
+		const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: "opencode/claude-fable-5" }));
+		assert.equal(snap.backend, "claude");
+		assert.equal(snap.meta.modelLabel, "claude-fable-5");
+		await runTool(runtime, manager.cancel([snap.id]));
+	});
+});
+
+await test("Claude Code model aliases requested through Pi route to Claude Code", async () => {
+	await withManager(async (manager, runtime) => {
+		for (const requested of ["fable", "opencode/haiku", "anthropic/opus", "other/sonnet"]) {
+			const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: requested }));
+			assert.equal(snap.backend, "claude");
+			assert.equal(snap.meta.modelLabel, requested.split("/").at(-1));
+			await runTool(runtime, manager.cancel([snap.id]));
+		}
+	});
+});
+
+await test("inherited Claude models route Pi spawns to Claude Code", async () => {
+	await withManager(async (manager, runtime) => {
+		const snap = await runTool(
+			runtime,
+			manager.spawn("pi", {
+				...task("review this"),
+				parent: {
+					parentCwd: process.cwd(),
+					inheritedModel: { provider: "opencode", id: "claude-opus-4-6" },
+				},
+			}),
+		);
+		assert.equal(snap.backend, "claude");
+		assert.equal(snap.meta.modelLabel, "claude-opus-4-6");
+		await runTool(runtime, manager.cancel([snap.id]));
+	});
+});
+
+await test("explicit Claude harness normalizes provider-qualified Claude models", async () => {
+	await withManager(async (manager, runtime) => {
+		const snap = await runTool(runtime, manager.spawn("claude", { ...task("review this"), model: "opencode/claude-fable-5" }));
+		assert.equal(snap.meta.modelLabel, "claude-fable-5");
+		await runTool(runtime, manager.cancel([snap.id]));
+	});
+});
+
+await test("explicit Claude harness keeps Claude Code defaults when model is omitted", async () => {
+	await withManager(async (manager, runtime) => {
+		const snap = await runTool(
+			runtime,
+			manager.spawn("claude", {
+				...task("review this"),
+				parent: {
+					parentCwd: process.cwd(),
+					inheritedModel: { provider: "anthropic", id: "claude-opus-4-6" },
+				},
+			}),
+		);
+		assert.equal(snap.meta.modelLabel, "claude/sonnet");
+		await runTool(runtime, manager.cancel([snap.id]));
+	});
+});
+
 await test("pi spawn fails clearly without the parent model registry", async () => {
 	await withManager(async (manager, runtime) => {
 		await assert.rejects(runTool(runtime, manager.spawn("pi", task("needs a registry"))), /model registry/);

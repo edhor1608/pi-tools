@@ -38,6 +38,29 @@ function bounded(text: string) {
 	return text.slice(0, ERROR_TEXT_MAX_LENGTH);
 }
 
+const CLAUDE_MODEL_ALIASES = new Set(["fable", "haiku", "opus", "sonnet"]);
+
+function claudeModelId(model: string, provider?: string) {
+	const segments = model.split("/");
+	const modelId = segments.at(-1) ?? model;
+	const providerId = provider ?? (segments.length > 1 ? segments[0] : undefined);
+	const lowerModelId = modelId.toLowerCase();
+	return providerId?.toLowerCase() === "anthropic" || /^claude(?:-|$)/.test(lowerModelId) || CLAUDE_MODEL_ALIASES.has(lowerModelId)
+		? modelId
+		: undefined;
+}
+
+function routeSpawn(backend: BackendName, task: SpawnTask): { backend: BackendName; task: SpawnTask } {
+	const inherited = task.parent.inheritedModel;
+	const model = task.model
+		? claudeModelId(task.model)
+		: backend === "pi" && inherited
+			? claudeModelId(inherited.id, inherited.provider)
+			: undefined;
+	if (!model) return { backend, task };
+	return { backend: "claude", task: { ...task, model } };
+}
+
 function boundedTranscriptText(text: string) {
 	return text.slice(0, TRANSCRIPT_TEXT_MAX_LENGTH);
 }
@@ -343,8 +366,9 @@ const makeManager = Effect.gen(function* () {
 		notify(s.id);
 	};
 
-	const spawn = (backendName: BackendName, task: SpawnTask) =>
+	const spawn = (requestedBackend: BackendName, requestedTask: SpawnTask) =>
 		Effect.gen(function* () {
+			const { backend: backendName, task } = routeSpawn(requestedBackend, requestedTask);
 			if (disposed) {
 				return yield* new SpawnError({
 					message: "Subagent manager is shutting down.",
