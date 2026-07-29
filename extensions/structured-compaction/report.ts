@@ -60,26 +60,21 @@ const isStructuredArtifact = (details: unknown): details is StructuredCompaction
 const replacementMessagesFromArtifact = (artifact: StructuredCompactionArtifact | undefined): AgentMessage[] | undefined =>
 	artifact?.replacementMessages;
 
-export const buildStructuredCompactionReport = (
-	entries: SessionEntry[],
-	leafId?: string | null,
-): StructuredCompactionReportItem[] => {
+export const buildStructuredCompactionReport = (entries: SessionEntry[], leafId?: string | null): StructuredCompactionReportItem[] => {
 	const pathEntries = getPathEntries(entries, leafId);
 	return pathEntries
 		.filter((entry): entry is CompactionEntry => entry.type === "compaction")
 		.map((entry) => {
 			const artifact = isStructuredArtifact(entry.details) ? entry.details : undefined;
-			const metrics = artifact?.metrics ??
-				computeStructuredCompactionMetrics(pathEntries, entry, replacementMessagesFromArtifact(artifact) ?? []);
+			const metrics =
+				artifact?.metrics ?? computeStructuredCompactionMetrics(pathEntries, entry, replacementMessagesFromArtifact(artifact) ?? []);
 			const compactionIndex = pathEntries.findIndex((pathEntry) => pathEntry.id === entry.id);
 			const beforeEntries = pathEntries.slice(0, compactionIndex);
 			const afterEntries = pathEntries.slice(compactionIndex + 1);
 			const lastAssistantBefore = [...beforeEntries]
 				.reverse()
 				.find((pathEntry) => pathEntry.type === "message" && pathEntry.message.role === "assistant");
-			const firstAssistantAfter = afterEntries.find(
-				(pathEntry) => pathEntry.type === "message" && pathEntry.message.role === "assistant",
-			);
+			const firstAssistantAfter = afterEntries.find((pathEntry) => pathEntry.type === "message" && pathEntry.message.role === "assistant");
 			return {
 				entry,
 				artifact,
@@ -88,18 +83,18 @@ export const buildStructuredCompactionReport = (
 				providerBefore:
 					lastAssistantBefore?.type === "message" && lastAssistantBefore.message.role === "assistant"
 						? {
-							total: lastAssistantBefore.message.usage.totalTokens,
-							input: lastAssistantBefore.message.usage.input,
-							cacheRead: lastAssistantBefore.message.usage.cacheRead,
-						}
+								total: lastAssistantBefore.message.usage.totalTokens,
+								input: lastAssistantBefore.message.usage.input,
+								cacheRead: lastAssistantBefore.message.usage.cacheRead,
+							}
 						: undefined,
 				providerAfter:
 					firstAssistantAfter?.type === "message" && firstAssistantAfter.message.role === "assistant"
 						? {
-							total: firstAssistantAfter.message.usage.totalTokens,
-							input: firstAssistantAfter.message.usage.input,
-							cacheRead: firstAssistantAfter.message.usage.cacheRead,
-						}
+								total: firstAssistantAfter.message.usage.totalTokens,
+								input: firstAssistantAfter.message.usage.input,
+								cacheRead: firstAssistantAfter.message.usage.cacheRead,
+							}
 						: undefined,
 				lastAssistantBeforeText: lastAssistantBefore ? assistantText(lastAssistantBefore) : undefined,
 				firstAssistantAfterText: firstAssistantAfter ? assistantText(firstAssistantAfter) : undefined,

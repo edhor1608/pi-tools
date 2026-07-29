@@ -6,14 +6,14 @@ Sources used for the current port:
 
 - installed Pi changelog, declarations, documentation, and examples
 - OpenAI SDK `6.26.0` compact-response declarations bundled with Pi
-- package typecheck and managed-extension loading
+- Oxlint compiler diagnostics and managed-extension loading
 - live `openai-codex/gpt-5.6-sol` compact-endpoint canary
 
 ## Package Runtime
 
 - imports and peer dependencies use `@earendil-works/*`
 - supported Pi range is `>=0.82.1 <0.83.0`
-- all extension source is covered by strict TypeScript checking
+- all extension and test source is covered by Oxlint type-aware rules and TypeScript compiler diagnostics
 - `complete()` currently comes from the temporary `@earendil-works/pi-ai/compat` entrypoint
 
 ## Structured Compaction

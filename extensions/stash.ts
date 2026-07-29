@@ -65,7 +65,11 @@ const isStashItem = (value: unknown): value is StashItem =>
 	typeof value.updatedAt === "number";
 
 const isStashState = (value: unknown): value is StashState =>
-	isObject(value) && value.version === 1 && typeof value.nextId === "number" && Array.isArray(value.items) && value.items.every(isStashItem);
+	isObject(value) &&
+	value.version === 1 &&
+	typeof value.nextId === "number" &&
+	Array.isArray(value.items) &&
+	value.items.every(isStashItem);
 
 const readStateFromBranch = (branch: SessionEntry[]): StashState => {
 	const snapshot = branch
@@ -222,7 +226,10 @@ function stashExtension(pi: ExtensionAPI) {
 
 	const runSerialized = async <T>(operation: () => Promise<T> | T): Promise<T> => {
 		const next = mutationQueue.then(operation);
-		mutationQueue = next.then(() => undefined, () => undefined);
+		mutationQueue = next.then(
+			() => undefined,
+			() => undefined,
+		);
 		return next;
 	};
 
@@ -415,10 +422,11 @@ function stashExtension(pi: ExtensionAPI) {
 
 	pi.registerMessageRenderer(SNAPSHOT_MESSAGE_TYPE, (message, options, theme) => {
 		const details = message.details as StashSnapshotMessageDetails | undefined;
+		const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 		const box = new Container();
 		box.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 		box.addChild(new Text(theme.fg("accent", theme.bold("Stash")), 1, 0));
-		box.addChild(new Text(options.expanded ? String(message.content) : details?.preview ?? String(message.content), 1, 0));
+		box.addChild(new Text(options.expanded ? content : (details?.preview ?? content), 1, 0));
 		box.addChild(new Text(theme.fg("dim", options.expanded ? "Saved prompts" : "Expand for full stash contents"), 1, 0));
 		box.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 		return box;

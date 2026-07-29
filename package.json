@@ -1,66 +1,76 @@
 {
-  "name": "@stead/pi-tools",
-  "version": "0.1.0",
-  "description": "Focused Pi extensions for file-link footnotes, deferred prompts, and structured compaction",
-  "type": "module",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/edhor1608/pi-tools.git"
-  },
-  "homepage": "https://github.com/edhor1608/pi-tools#readme",
-  "bugs": {
-    "url": "https://github.com/edhor1608/pi-tools/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "keywords": [
-    "pi-package",
-    "pi",
-    "stead",
-    "context",
-    "compaction",
-    "workflow",
-    "stash",
-    "file-links",
-    "footnotes",
-    "rendering"
-  ],
-  "files": [
-    "extensions",
-    "defaults",
-    "scripts",
-    "docs",
-    "README.md",
-    "LICENSE"
-  ],
-  "scripts": {
-    "clean": "echo 'nothing to clean'",
-    "build": "echo 'nothing to build'",
-    "check": "bun run typecheck && bun run test:file-footnotes && bun run test:stash-release && bun run test:structured-compaction && bun run test:packaged-defaults-fallback",
-    "analyze": "bun ./scripts/analyze-session.ts",
-    "test:stash-release": "bun ./scripts/test-stash-release.ts",
-    "test:file-footnotes": "bun ./scripts/test-file-footnotes.ts",
-    "test:structured-compaction": "bun ./scripts/test-structured-compaction.ts",
-    "test:packaged-defaults-fallback": "bun ./scripts/test-packaged-defaults-fallback.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-agent-core": ">=0.82.1 <0.83.0",
-    "@earendil-works/pi-ai": ">=0.82.1 <0.83.0",
-    "@earendil-works/pi-coding-agent": ">=0.82.1 <0.83.0",
-    "@earendil-works/pi-tui": ">=0.82.1 <0.83.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.10.0",
-    "typescript": "^5.9.3"
-  },
-  "pi": {
-    "extensions": [
-      "./extensions/file-footnotes.ts",
-      "./extensions/stash.ts",
-      "./extensions/structured-compaction/index.ts"
-    ]
-  }
+	"name": "@stead/pi-tools",
+	"version": "0.1.0",
+	"description": "Focused Pi extensions for file-link footnotes, deferred prompts, and structured compaction",
+	"keywords": [
+		"compaction",
+		"context",
+		"file-links",
+		"footnotes",
+		"pi",
+		"pi-package",
+		"rendering",
+		"stash",
+		"stead",
+		"workflow"
+	],
+	"homepage": "https://github.com/edhor1608/pi-tools#readme",
+	"bugs": {
+		"url": "https://github.com/edhor1608/pi-tools/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/edhor1608/pi-tools.git"
+	},
+	"files": [
+		"extensions",
+		"defaults",
+		"scripts",
+		"docs",
+		"README.md",
+		"LICENSE"
+	],
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"clean": "echo 'nothing to clean'",
+		"build": "echo 'nothing to build'",
+		"format": "oxfmt extensions scripts package.json tsconfig.json pnpm-workspace.yaml .oxlintrc.json .oxfmtrc.json",
+		"format:check": "oxfmt --check extensions scripts package.json tsconfig.json pnpm-workspace.yaml .oxlintrc.json .oxfmtrc.json",
+		"lint": "oxlint --deny-warnings .",
+		"test": "node --test \"scripts/*.test.ts\"",
+		"check": "pnpm run format:check && pnpm run lint && pnpm test",
+		"analyze": "node ./scripts/analyze-session.ts",
+		"test:stash-release": "node --test scripts/stash-release.test.ts",
+		"test:file-footnotes": "node --test scripts/file-footnotes.test.ts",
+		"test:structured-compaction": "node --test scripts/structured-compaction.test.ts",
+		"test:packaged-defaults-fallback": "node --test scripts/packaged-defaults-fallback.test.ts"
+	},
+	"devDependencies": {
+		"@types/node": "26.1.2",
+		"oxfmt": "0.61.0",
+		"oxlint": "1.76.0",
+		"oxlint-tsgolint": "7.0.2001",
+		"typescript": "7.0.2"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": ">=0.82.1 <0.83.0",
+		"@earendil-works/pi-ai": ">=0.82.1 <0.83.0",
+		"@earendil-works/pi-coding-agent": ">=0.82.1 <0.83.0",
+		"@earendil-works/pi-tui": ">=0.82.1 <0.83.0"
+	},
+	"engines": {
+		"node": ">=26"
+	},
+	"packageManager": "pnpm@11.9.0",
+	"pi": {
+		"extensions": [
+			"./extensions/file-footnotes.ts",
+			"./extensions/stash.ts",
+			"./extensions/structured-compaction/index.ts"
+		]
+	}
 }

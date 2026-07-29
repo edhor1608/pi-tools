@@ -18,20 +18,18 @@ Structured compaction, file footnotes, and stash were built against Pi `0.73.x` 
 
 Passed:
 
-- `bun run typecheck`
-- `bun run test:file-footnotes`
-- `bun run test:stash-release`
-- `bun run test:structured-compaction`
-- `bun run test:packaged-defaults-fallback`
+- `pnpm run format:check`
+- `pnpm run lint` (Oxlint type-aware rules and compiler diagnostics)
+- `pnpm test`
 - import of all three extension modules
 - isolated Pi `0.82.1` load of all package extensions
 - live `openai-codex/gpt-5.6-sol` compact canary; output contained `message` and `compaction_summary` items plus usage
 
 ## What did not work
 
-A mechanical scope replacement alone also failed typecheck because `complete()` moved to `pi-ai/compat`, assistant-message unions narrowed, stash command/shortcut contexts diverged, and the old Responses converter path was no longer valid.
+A mechanical scope replacement alone initially failed compiler diagnostics because `complete()` moved to `pi-ai/compat`, assistant-message unions narrowed, stash command/shortcut contexts diverged, and the old Responses converter path was no longer valid.
 
-A static import of the new public Responses-converter subpath passed typecheck and explicit `-e` loading, but failed when Pi loaded the extension as a managed package: the host alias expanded the subpath after `compat.js`. The extension now resolves that same public package export with `createRequire(import.meta.url).resolve()` before dynamically importing its file URL. `pi list` is the regression check for this package-loader-only path.
+A static import of the new public Responses-converter subpath passed compiler diagnostics and explicit `-e` loading, but failed when Pi loaded the extension as a managed package: the host alias expanded the subpath after `compat.js`. The extension now resolves that same public package export with `createRequire(import.meta.url).resolve()` before dynamically importing its file URL. `pi list` is the regression check for this package-loader-only path.
 
 ## Remaining risks
 

@@ -107,7 +107,7 @@ Commands:
 Offline session analysis:
 
 ```bash
-bun ./scripts/analyze-session.ts ~/.pi/agent/sessions/.../session.jsonl
+pnpm run analyze ~/.pi/agent/sessions/.../session.jsonl
 ```
 
 More details: [defaults/structured-compaction/README.md](defaults/structured-compaction/README.md).
@@ -115,9 +115,8 @@ More details: [defaults/structured-compaction/README.md](defaults/structured-com
 ## Development
 
 ```bash
-bun install
-bun run check
-bun run test:packaged-defaults-fallback
+pnpm install --frozen-lockfile
+pnpm run check
 ```
 
-`bun run check` runs the Pi `0.82.1` typecheck plus tests for all three extensions.
+`pnpm run check` runs Oxfmt verification, Oxlint with type-aware linting and compiler diagnostics, and the Node test suite. TypeScript scripts run directly on Node 26.

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { parseSessionEntries, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { buildStructuredCompactionReport, formatStructuredCompactionReport } fro
 
 const sessionPath = process.argv[2];
 if (!sessionPath) {
-	console.error("Usage: bun ./scripts/analyze-session.ts <session.jsonl>");
+	console.error("Usage: node ./scripts/analyze-session.ts <session.jsonl>");
 	process.exit(1);
 }
 
@@ -19,6 +19,6 @@ if (entries.length === 0) {
 	process.exit(1);
 }
 
-const leafId = [...entries].reverse().find((entry) => entry.type !== "session")?.id;
+const leafId = entries.at(-1)?.id;
 const items = buildStructuredCompactionReport(entries, leafId);
 console.log(formatStructuredCompactionReport(items, { sessionFile: resolvedSessionPath }));

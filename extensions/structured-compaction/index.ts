@@ -2,17 +2,9 @@ import type { CompactionEntry, ExtensionAPI, ExtensionCommandContext } from "@ea
 import { Box, Text } from "@earendil-works/pi-tui";
 import { createStructuredCompactionArtifact, computeFileLists, getLatestStructuredCompactionArtifact } from "./artifact.ts";
 import { runStructuredCompactionBackend } from "./backend.ts";
-import {
-	ensureStructuredCompactionDefaults,
-	loadStructuredCompactionConfig,
-	loadStructuredCompactionPrompts,
-} from "./config.ts";
+import { ensureStructuredCompactionDefaults, loadStructuredCompactionConfig, loadStructuredCompactionPrompts } from "./config.ts";
 import { computeStructuredCompactionMetrics, formatStructuredCompactionStats } from "./metrics.ts";
-import {
-	buildStructuredCompactionReport,
-	formatStructuredCompactionReport,
-	formatStructuredCompactionReportPreview,
-} from "./report.ts";
+import { buildStructuredCompactionReport, formatStructuredCompactionReport, formatStructuredCompactionReportPreview } from "./report.ts";
 import { convertAgentMessagesToResponsesInput, normalizeRemoteOutputItemsForInput } from "./responses-adapter.ts";
 import { renderStructuredReplacementMessages } from "./renderer.ts";
 import type { StructuredCompactionInput } from "./types.ts";
@@ -166,25 +158,10 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 				tokensBefore: input.tokensBefore,
 				details: undefined,
 			} satisfies CompactionEntry;
-			const metrics = computeStructuredCompactionMetrics(
-				event.branchEntries,
-				provisionalCompaction,
-				provisionalReplacementMessages,
-			);
+			const metrics = computeStructuredCompactionMetrics(event.branchEntries, provisionalCompaction, provisionalReplacementMessages);
 			const displaySummary = `${formatStructuredCompactionStats(backendOutput.kind, metrics)}\n\n${backendOutput.summary}`;
-			const replacementMessages = renderStructuredReplacementMessages(
-				{ ...backendOutput, displaySummary },
-				input,
-				config,
-			);
-			const artifact = createStructuredCompactionArtifact(
-				config,
-				input,
-				backendOutput,
-				displaySummary,
-				metrics,
-				replacementMessages,
-			);
+			const replacementMessages = renderStructuredReplacementMessages({ ...backendOutput, displaySummary }, input, config);
+			const artifact = createStructuredCompactionArtifact(config, input, backendOutput, displaySummary, metrics, replacementMessages);
 
 			return {
 				compaction: {

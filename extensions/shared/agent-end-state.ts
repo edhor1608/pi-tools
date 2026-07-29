@@ -36,7 +36,7 @@ const findQuestionLine = (text: string): string | undefined => {
 		.map((line) => normalizeText(line))
 		.filter((line) => line.length > 0)
 		.filter((line) => !line.startsWith("```"));
-	const directQuestion = lines.find((line) => /\?$/.test(line));
+	const directQuestion = lines.find((line) => line.endsWith("?"));
 	if (directQuestion) return directQuestion;
 	return lines.find((line) =>
 		/(do you want|would you like|should i|should we|can you|could you|please confirm|let me know|which option|which one|what should|how should)/i.test(
@@ -45,10 +45,7 @@ const findQuestionLine = (text: string): string | undefined => {
 	);
 };
 
-export function classifyAgentEndState(
-	messages: AgentMessage[],
-	options: { hasPendingMessages?: boolean } = {},
-): AgentEndClassification {
+export function classifyAgentEndState(messages: AgentMessage[], options: { hasPendingMessages?: boolean } = {}): AgentEndClassification {
 	if (options.hasPendingMessages) {
 		return {
 			kind: "queued",
@@ -64,12 +61,14 @@ export function classifyAgentEndState(
 		};
 	}
 
-	const stopReason = typeof (lastAssistant as { stopReason?: unknown }).stopReason === "string"
-		? (lastAssistant as { stopReason: string }).stopReason
-		: undefined;
-	const errorMessage = typeof (lastAssistant as { errorMessage?: unknown }).errorMessage === "string"
-		? normalizeText((lastAssistant as { errorMessage: string }).errorMessage)
-		: "";
+	const stopReason =
+		typeof (lastAssistant as { stopReason?: unknown }).stopReason === "string"
+			? (lastAssistant as { stopReason: string }).stopReason
+			: undefined;
+	const errorMessage =
+		typeof (lastAssistant as { errorMessage?: unknown }).errorMessage === "string"
+			? normalizeText((lastAssistant as { errorMessage: string }).errorMessage)
+			: "";
 	if (errorMessage) {
 		return {
 			kind: "error",

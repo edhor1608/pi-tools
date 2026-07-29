@@ -22,9 +22,9 @@ const require = createRequire(import.meta.url);
 let responsesConverterPromise: Promise<typeof ConvertResponsesMessages> | undefined;
 
 const loadResponsesConverter = async (): Promise<typeof ConvertResponsesMessages> => {
-	responsesConverterPromise ||= import(
-		pathToFileURL(require.resolve("@earendil-works/pi-ai/api/openai-responses-shared")).href
-	).then((module) => module.convertResponsesMessages as typeof ConvertResponsesMessages);
+	responsesConverterPromise ||= import(pathToFileURL(require.resolve("@earendil-works/pi-ai/api/openai-responses-shared")).href).then(
+		(module) => module.convertResponsesMessages as typeof ConvertResponsesMessages,
+	);
 	return responsesConverterPromise;
 };
 
@@ -179,10 +179,7 @@ export const resolveCodexRemoteAuth = async (
 	};
 };
 
-export const convertAgentMessagesToResponsesInput = async (
-	model: Model<Api>,
-	messages: AgentMessage[],
-): Promise<JsonValue[]> => {
+export const convertAgentMessagesToResponsesInput = async (model: Model<Api>, messages: AgentMessage[]): Promise<JsonValue[]> => {
 	if (messages.length === 0) return [];
 	const convertResponsesMessages = await loadResponsesConverter();
 	const converted: unknown = convertResponsesMessages(

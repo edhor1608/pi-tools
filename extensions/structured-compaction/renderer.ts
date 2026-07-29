@@ -1,9 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type {
-	CompactionBackendOutput,
-	StructuredCompactionConfig,
-	StructuredCompactionInput,
-} from "./types.ts";
+import type { CompactionBackendOutput, StructuredCompactionConfig, StructuredCompactionInput } from "./types.ts";
 
 const getRenderSummary = (output: CompactionBackendOutput): string =>
 	typeof output.displaySummary === "string" ? output.displaySummary : output.summary;
