@@ -1,8 +1,9 @@
 # pi-tools
 
-`pi-tools` is a focused Pi package with four independent extensions:
+`pi-tools` is a focused Pi package with five independent extensions:
 
 - `subagents` runs background Pi and Claude Code agents
+- `statusline` adds a Claude-style footer with context and Codex limit telemetry
 - `file-footnotes` keeps file-heavy assistant answers readable
 - `stash` stores complete prompts for controlled later release
 - `structured-compaction` preserves continuity in long sessions
@@ -29,7 +30,7 @@ A local checkout also works:
 pi install /absolute/path/to/pi-tools
 ```
 
-The four extensions are exposed separately and can be enabled or disabled through `pi config`.
+The five extensions are exposed separately and can be enabled or disabled through `pi config`.
 
 ## Subagents
 
@@ -48,6 +49,26 @@ Claude requires an authenticated local installation:
 
 ```bash
 claude auth status
+```
+
+## Statusline
+
+Statusline replaces Pi's default footer with a compact Claude-style line:
+
+- repo-relative cwd, git branch, and dirty marker
+- active model and thinking level
+- context-window progress bar from Pi's current context usage
+- session token and cost totals
+- Codex account usage from `https://chatgpt.com/backend-api/codex/usage`
+- both Codex windows when OpenAI reports them, e.g. `5h` and `7d`
+
+The Codex segment uses Pi's existing `openai-codex` OAuth token, caches only non-secret usage data in `~/.pi/agent/pi-statusline-cache.json`, and refreshes at most once per minute. Provider `x-ratelimit-*` headers are still used as a fallback when present. If OpenAI returns only one account window, only that window is shown. Account usage fetches require `python3`; if it is unavailable, the footer keeps working and only the Codex usage segment is omitted or shown as unavailable.
+
+Toggle or inspect it at runtime:
+
+```text
+/pi-statusline
+/pi-statusline debug
 ```
 
 ## File Footnotes
