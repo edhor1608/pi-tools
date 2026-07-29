@@ -115,7 +115,8 @@ const parseFileTarget = (href: string): ParsedFileTarget => {
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 	if (!target.filesystemPath) return undefined;
 	const fileUrl = pathToFileURL(target.filesystemPath).href;
-	const base = process.platform === "win32" ? fileUrl.replace(/^file:\/\/\//, "vscode://file/") : fileUrl.replace(/^file:\/\//, "vscode://file/");
+	const base =
+		process.platform === "win32" ? fileUrl.replace(/^file:\/\/\//, "vscode://file/") : fileUrl.replace(/^file:\/\//, "vscode://file/");
 	return target.line ? `${base}:${target.line}${target.column ? `:${target.column}` : ""}` : base;
 };
 
@@ -207,16 +208,19 @@ export const rewriteFileLinksAsFootnotes = (text: string): string => {
 		return item;
 	};
 	let fencedBy: "`" | "~" | undefined;
-	const rewritten = text.split("\n").map((line) => {
-		const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-		if (fence) {
-			const marker = fence[0] as "`" | "~";
-			if (!fencedBy) fencedBy = marker;
-			else if (fencedBy === marker) fencedBy = undefined;
-			return line;
-		}
-		return fencedBy ? line : rewriteMarkdownLine(line, register);
-	}).join("\n");
+	const rewritten = text
+		.split("\n")
+		.map((line) => {
+			const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+			if (fence) {
+				const marker = fence[0] as "`" | "~";
+				if (!fencedBy) fencedBy = marker;
+				else if (fencedBy === marker) fencedBy = undefined;
+				return line;
+			}
+			return fencedBy ? line : rewriteMarkdownLine(line, register);
+		})
+		.join("\n");
 	if (items.length === 0) return text;
 	const references = items.map((item) => `- [[${item.index}]](${markdownDestination(item.href)}) ${codeSpan(item.displayHref)}`);
 	return `${rewritten}\n\n${FOOTNOTE_HEADER}\n${references.join("\n")}`;
@@ -261,11 +265,18 @@ const getLatestAssistantText = (ctx: { sessionManager: { getBranch: () => Sessio
 		if (message.stopReason !== "stop") return { error: `Last assistant message incomplete (${String(message.stopReason)})` };
 		const content = Array.isArray(message.content) ? message.content : [];
 		return {
-			text: content.flatMap((block) =>
-				typeof block === "object" && block !== null && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string"
-					? [block.text]
-					: [],
-			).join("\n"),
+			text: content
+				.flatMap((block) =>
+					typeof block === "object" &&
+					block !== null &&
+					"type" in block &&
+					block.type === "text" &&
+					"text" in block &&
+					typeof block.text === "string"
+						? [block.text]
+						: [],
+				)
+				.join("\n"),
 		};
 	}
 	return { error: "No assistant messages found" };

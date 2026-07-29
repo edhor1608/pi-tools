@@ -83,16 +83,11 @@ const resolveSummaryModelAndAuth = async (
 	throw new Error("No authenticated summary model available");
 };
 
-const runPiModelSummary = async (
-	input: StructuredCompactionInput,
-	runtime: BackendRuntime,
-): Promise<CompactionBackendOutput> => {
+const runPiModelSummary = async (input: StructuredCompactionInput, runtime: BackendRuntime): Promise<CompactionBackendOutput> => {
 	const { ctx, config, prompts, signal } = runtime;
 	const { model, modelRef, apiKey, headers, env } = await resolveSummaryModelAndAuth(ctx, config);
 
-	const previousReplacementHistory = input.previousArtifact
-		? serializeMessages(input.previousArtifact.replacementMessages)
-		: undefined;
+	const previousReplacementHistory = input.previousArtifact ? serializeMessages(input.previousArtifact.replacementMessages) : undefined;
 	const previousSummary =
 		input.previousSummary && input.previousSummary !== input.previousArtifact?.summary ? input.previousSummary : undefined;
 	const conversation = serializeMessages(input.messagesToSummarize) ?? "(none)";
@@ -186,10 +181,7 @@ const codexRemoteBackend: CompactionBackend = {
 		if (!model || !isCodexRemoteCompatibleModel(model)) {
 			throw new RemoteCompactionUnavailableError("Current model is not compatible with codex-remote compaction");
 		}
-		if (
-			input.previousArtifact?.remoteReplacement &&
-			input.previousArtifact.remoteReplacement.api !== model.api
-		) {
+		if (input.previousArtifact?.remoteReplacement && input.previousArtifact.remoteReplacement.api !== model.api) {
 			throw new RemoteCompactionUnavailableError("Previous remote replacement history is not compatible with the current model API");
 		}
 
@@ -221,7 +213,7 @@ const codexRemoteBackend: CompactionBackend = {
 			remoteReplacement,
 			usage: summaryResult.usage,
 			metadata: {
-				...(summaryResult.metadata || {}),
+				...summaryResult.metadata,
 				remoteApi: remoteReplacement.api,
 				remoteEndpoint: remoteReplacement.endpoint,
 				remoteAuthMode: remoteReplacement.authMode,

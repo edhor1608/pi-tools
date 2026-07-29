@@ -37,7 +37,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
 const deepMerge = <T>(base: T, override: unknown): T => {
-	if (!isPlainObject(base) || !isPlainObject(override)) return (override as T) ?? base;
+	if (!isPlainObject(base) || !isPlainObject(override)) return override === undefined ? base : (override as T);
 
 	const merged: Record<string, unknown> = { ...base };
 	for (const [key, value] of Object.entries(override)) {
@@ -47,7 +47,7 @@ const deepMerge = <T>(base: T, override: unknown): T => {
 	return merged as T;
 };
 
-const readJson = (path: string): unknown | undefined => {
+const readJson = (path: string): unknown => {
 	if (!existsSync(path)) return undefined;
 	return JSON.parse(readFileSync(path, "utf8"));
 };

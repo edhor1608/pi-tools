@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-07-29 Native Node And Oxide Toolchain
+
+### Context
+
+The package used Bun to install dependencies and execute ad hoc TypeScript assertion scripts, while `tsc --noEmit` was the only static check. Node 26 now executes this repository's erasable TypeScript syntax natively, TypeScript 7 is stable, and Oxlint can report both type-aware rules and compiler diagnostics through its `typeCheck` mode.
+
+### Decision
+
+Use pnpm `11.9.0` with a frozen `pnpm-lock.yaml`, Node `>=26` for direct TypeScript execution, and `node:test` with `node:assert/strict`. Use Oxfmt for formatting. Use Oxlint `1.76.0` with `oxlint-tsgolint`, root `typeAware` and `typeCheck` options, and warnings denied. Remove the separate `tsc --noEmit` command while retaining TypeScript `7.0.2` for project/editor types. Explicitly deny unused transitive build scripts in `pnpm-workspace.yaml`.
+
+### Rationale
+
+This is the smallest modern toolchain for a Node-only Pi extension package. Native execution avoids a redundant transpiler, `node:test` supplies a real test lifecycle, and Oxlint's compiler diagnostics make a second typecheck process unnecessary. Oxfmt and Oxlint give one deterministic `pnpm run check` gate.
+
+### Consequences
+
+Development requires Node 26 and pnpm. Runtime TypeScript must remain erasable; `erasableSyntaxOnly` and `verbatimModuleSyntax` enforce that constraint. `pnpm run check` is authoritative and runs formatting verification, lint/type diagnostics, and all tests. If future code needs TSX, decorators, runtime enums, or tsconfig path transformation, the script-runner decision must be revisited.
+
 ## 2026-07-29 Reduce Package To Three Extensions
 
 ### Context

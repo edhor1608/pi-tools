@@ -58,13 +58,9 @@ const estimateMessageTokens = (message: AgentMessage): number => {
 	}
 };
 
-const sumEstimatedTokens = (messages: AgentMessage[]): number =>
-	messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+const sumEstimatedTokens = (messages: AgentMessage[]): number => messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
 
-const replaceCompactionSummaryMessage = (
-	messages: AgentMessage[],
-	replacementMessages: AgentMessage[],
-): AgentMessage[] => {
+const replaceCompactionSummaryMessage = (messages: AgentMessage[], replacementMessages: AgentMessage[]): AgentMessage[] => {
 	const index = messages.findIndex((message) => message.role === "compactionSummary");
 	if (index === -1) return messages;
 	return [...messages.slice(0, index), ...replacementMessages, ...messages.slice(index + 1)];
