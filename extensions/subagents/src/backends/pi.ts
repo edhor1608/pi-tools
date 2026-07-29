@@ -28,6 +28,7 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
 	"subagent_spawn",
 	"subagent_wait",
 	"subagent_cancel",
+	"subagent_send",
 	"subagent_check",
 	"subagent_list",
 	"workflow",

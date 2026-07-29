@@ -5,7 +5,7 @@ description: Use when the user asks to delegate work to Pi or Claude subagents.
 
 # Subagents
 
-Each child is headless, has its own context window, cannot see the parent conversation, cannot ask the user, and cannot spawn more subagents. Give it a self-contained prompt with paths, constraints, and the expected report.
+Each child is headless, has its own context window, cannot see the parent conversation, and cannot ask the user. Give it a self-contained prompt with paths, constraints, and the expected report. Ordinary workers are leaves; a Claude child explicitly started in `orchestrator` mode can autonomously manage host-visible descendants.
 
 ## Harnesses
 
@@ -19,12 +19,15 @@ Reasoning levels accepted by both harnesses are `off`, `minimal`, `low`, `medium
 
 ## Spawn and Manage
 
-Call `subagent_spawn` with a complete `prompt`, short `name`, chosen `harness`, and optional `working_dir`, `model`, and `reasoning_effort`. There is no extension-level concurrency limit.
+Call `subagent_spawn` with a complete `prompt`, short `name`, chosen `harness`, and optional `working_dir`, `model`, `reasoning_effort`, and `mode`. There is no extension-level concurrency limit.
+
+Use `mode: "orchestrator"` when a Claude session should dynamically lead additional Pi or Claude agents. The orchestrator receives scoped `spawn`, `check`, `list`, `send`, `wait`, and `cancel` controls over its descendants. The host records the tree and routes results but does not prescribe a workflow or require approval. Nested orchestrators are possible by explicitly granting that mode again, up to the depth-eight runaway guard. A Pi descendant with no model inherits the root Pi environment rather than Claude's model.
 
 - `subagent_check({ id })`: inspect progress without blocking.
-- `subagent_list()`: list tracked runs.
+- `subagent_list()`: list the complete ownership tree.
+- `subagent_send({ id, message })`: steer or continue any tracked session.
 - `subagent_wait({ ids })`: block only when results are required to proceed.
-- `subagent_cancel({ ids })`: stop runs while preserving partial transcripts.
+- `subagent_cancel({ ids })`: stop runs and their active descendant subtrees while preserving partial transcripts.
 - `/subagents`: choose a run, inspect its transcript, steer it, or abort it.
 
 Results return automatically. After spawning, continue useful parent work instead of immediately waiting.

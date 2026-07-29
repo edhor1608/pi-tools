@@ -39,11 +39,14 @@ Subagents run autonomously with their own context windows, sessions, and normal 
 The parent model can use:
 
 - `subagent_spawn` to start background work
-- `subagent_check` and `subagent_list` to inspect it without blocking
+- `subagent_check` and `subagent_list` to inspect the complete agent tree without blocking
+- `subagent_send` to steer or continue any tracked session
 - `subagent_wait` when a result is required immediately
 - `subagent_cancel` to abort work while preserving its transcript
 
-Settled results return automatically. `/subagents` opens a compact picker, then a full-screen transcript where a child can be steered or aborted. There is no extension-level concurrency limit, sandbox, or project trust gate. Recursive subagent spawning and user prompts are disabled in children.
+Set `mode: "orchestrator"` on a Claude spawn to give it direct host-managed `spawn`, `check`, `list`, `send`, `wait`, and `cancel` controls. It can dynamically create Pi or Claude descendants; every node remains visible and steerable from the main agent and `/subagents`. Nested results return to their immediate parent, and a root orchestrator is not reported complete while descendants remain active.
+
+Settled results return automatically. `/subagents` opens a hierarchical picker, then a full-screen transcript where any node can be steered or aborted. There is no extension-level concurrency limit, workflow, approval gate, sandbox, or project trust gate. Ordinary workers and all Pi children remain leaves; orchestrator capability is explicit. Claude's separate native `Agent`/`Task` tree and interactive user prompts remain disabled.
 
 Claude requires an authenticated local installation:
 

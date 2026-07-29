@@ -9,7 +9,7 @@
 import type { ExtensionCommandContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
 import { Input, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { formatElapsed, type SubagentSnapshot } from "../domain.ts";
+import { formatElapsed, orderSubagentTree, type SubagentSnapshot } from "../domain.ts";
 import { formatContextUtilization } from "../format.ts";
 import type { SubagentReadModel } from "../manager.ts";
 import { buildTranscriptLines } from "./transcript.ts";
@@ -30,6 +30,7 @@ function statusGlyph(snap: SubagentSnapshot, theme: Theme): string {
 }
 
 function statusWord(snap: SubagentSnapshot, theme: Theme): string {
+	if (snap.waitingForChildren) return theme.fg("warning", "waiting");
 	switch (snap.status) {
 		case "running":
 			return theme.fg("warning", "running");
@@ -124,7 +125,7 @@ class SubagentDashboard implements Component {
 	}
 
 	private subs(): ReadonlyArray<SubagentSnapshot> {
-		return this.view.list();
+		return orderSubagentTree(this.view.list());
 	}
 
 	private cleanup() {
@@ -260,7 +261,9 @@ class SubagentDashboard implements Component {
 			// Left: marker, status square, title, dim id
 			const marker = isSelected ? theme.fg("accent", "❯") : " ";
 			const title = isSelected ? theme.fg("accent", snap.title) : theme.fg("text", snap.title);
-			const left = ` ${marker} ${statusGlyph(snap, theme)} ${title} ${theme.fg("dim", snap.id)}`;
+			const branch =
+				snap.depth > 0 ? `${"  ".repeat(Math.min(snap.depth - 1, 6))}└─ ${snap.depth > 7 ? `${snap.parentId ?? "?"} ` : ""}` : "";
+			const left = ` ${marker} ${branch}${statusGlyph(snap, theme)} ${title} ${theme.fg("dim", snap.id)}`;
 
 			// Right: backend · model · context utilization · elapsed · status
 			const utilization = formatContextUtilization(snap.usage);
@@ -440,12 +443,16 @@ class TakeoverView implements Component, Focusable {
 
 		lines.push(border);
 		const utilization = formatContextUtilization(snap.usage);
+		const childCount = this.view.list().filter((entry) => entry.parentId === snap.id).length;
 		const header =
 			`${statusGlyph(snap, theme)} ` +
 			theme.fg("accent", theme.bold(`${snap.id} · ${snap.title}`)) +
-			theme.fg("muted", ` · ${snap.status} · ${formatElapsed(snap)}`) +
+			theme.fg("muted", ` · ${snap.waitingForChildren ? "waiting" : snap.status} · ${formatElapsed(snap)}`) +
 			(this.options?.badge ? theme.fg("muted", ` · ${this.options.badge}`) : "") +
-			theme.fg("dim", ` · ${snap.backend}: ${snap.meta.modelLabel ?? "?"}`) +
+			theme.fg(
+				"dim",
+				` · ${snap.backend}: ${snap.meta.modelLabel ?? "?"} · ${snap.mode}${snap.parentId ? ` · parent ${snap.parentId}` : ""} · ${childCount} child${childCount === 1 ? "" : "ren"}`,
+			) +
 			(utilization ? theme.fg("dim", ` · ${utilization}`) : "");
 		lines.push(truncateToWidth(header, width));
 		lines.push(border);

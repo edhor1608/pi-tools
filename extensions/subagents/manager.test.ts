@@ -169,6 +169,16 @@ await test("explicit Claude harness keeps Claude Code defaults when model is omi
 	});
 });
 
+await test("orchestrator mode requires an effective Claude backend", async () => {
+	await withManager(async (manager, runtime) => {
+		await assert.rejects(runTool(runtime, manager.spawn("pi", { ...task("lead"), mode: "orchestrator" })), /Claude backend/);
+		const routed = await runTool(runtime, manager.spawn("pi", { ...task("lead"), mode: "orchestrator", model: "fable" }));
+		assert.equal(routed.backend, "claude");
+		assert.equal(routed.mode, "orchestrator");
+		await runTool(runtime, manager.cancel([routed.id]));
+	});
+});
+
 await test("pi spawn fails clearly without the parent model registry", async () => {
 	await withManager(async (manager, runtime) => {
 		await assert.rejects(runTool(runtime, manager.spawn("pi", task("needs a registry"))), /model registry/);
@@ -177,8 +187,10 @@ await test("pi spawn fails clearly without the parent model registry", async () 
 	});
 });
 
-await test("send steers an idle subagent into another turn", async () => {
+await test("send steers an idle subagent into another turn and retracts its settled result", async () => {
 	await withManager(async (manager, runtime) => {
+		const restarted: string[] = [];
+		manager.view.setOnStarted((id) => restarted.push(id));
 		const snap = await runTool(runtime, manager.spawn("claude", task("First turn")));
 		await runTool(runtime, manager.waitFor([snap.id]));
 		assert.equal(manager.view.get(snap.id)?.status, "done");
@@ -187,6 +199,7 @@ await test("send steers an idle subagent into another turn", async () => {
 		while (manager.view.get(snap.id)?.status !== "running") {
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
+		assert.deepEqual(restarted, [snap.id]);
 		await runTool(runtime, manager.waitFor([snap.id]));
 		const afterSecond = manager.view.get(snap.id);
 		assert.equal(afterSecond?.status, "done");

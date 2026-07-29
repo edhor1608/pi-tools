@@ -9,6 +9,7 @@ Sources used for the current port:
 - Oxlint compiler diagnostics and managed-extension loading
 - live `openai-codex/gpt-5.6-sol` compact-endpoint and Pi-subagent canaries
 - live Claude Agent SDK completion and interruption canaries through Claude Code `2.1.220`
+- a live Fable orchestration canary that delegates concurrently to Pi/Codex and Claude workers through an in-process SDK MCP server
 
 ## Package Runtime
 
@@ -21,6 +22,7 @@ Sources used for the current port:
 
 - Pi children use `createAgentSession()`, normal session files, extension binding in print mode, and the parent `ModelRegistry`
 - Claude children use Claude Agent SDK `0.3.220` with the installed Claude Code executable and existing user authentication
+- explicit Claude orchestrators receive host-backed tools through `createSdkMcpServer`; native `Agent`/`Task` remain disabled so `/subagents` stays authoritative
 - Effect `4.0.0-beta.102` scopes manager, stream, cancellation, and teardown lifetimes
 - `/subagents` uses current Pi TUI keybindings and custom-component APIs
 - automatic result delivery is regression-tested with Structured Compaction active

@@ -7,8 +7,9 @@
  *   model, reasoning_effort).
  * - subagent_wait: block until the listed subagents settle, return results.
  * - subagent_cancel: stop one or more running subagents.
+ * - subagent_send: steer or continue a subagent.
  * - subagent_check: peek at a subagent's status and recent activity.
- * - subagent_list: list all subagents.
+ * - subagent_list: list the complete subagent tree.
  *
  * Unawaited subagents queue their result as a follow-up message when they
  * settle. `/subagents` opens a picker + full interactive takeover view.
@@ -26,7 +27,15 @@ import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@earend
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getMarkdownTheme, keyHint, truncateHead } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { BACKEND_NAMES, formatElapsed, latestText, REASONING_EFFORTS, type SubagentSnapshot } from "./src/domain.ts";
+import {
+	BACKEND_NAMES,
+	formatElapsed,
+	latestText,
+	orderSubagentTree,
+	REASONING_EFFORTS,
+	SUBAGENT_MODES,
+	type SubagentSnapshot,
+} from "./src/domain.ts";
 import { formatActivityStatus, formatContextUtilization } from "./src/format.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
@@ -37,6 +46,8 @@ import {
 	SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS,
 	SUBAGENT_CHECK_TOOL_DESCRIPTION,
 	SUBAGENT_LIST_TOOL_DESCRIPTION,
+	SUBAGENT_SEND_PARAMETER_DESCRIPTIONS,
+	SUBAGENT_SEND_TOOL_DESCRIPTION,
 	SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS,
 	SUBAGENT_SPAWN_PROMPT_GUIDELINES,
 	SUBAGENT_SPAWN_PROMPT_SNIPPET,
@@ -55,6 +66,9 @@ const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024;
 function describeSubagent(snap: SubagentSnapshot) {
 	const details = [
 		`${snap.backend}: ${snap.meta.modelLabel ?? "?"}`,
+		snap.mode,
+		snap.parentId ? `parent ${snap.parentId}` : undefined,
+		snap.waitingForChildren ? "waiting for descendants" : undefined,
 		formatContextUtilization(snap.usage),
 		formatElapsed(snap),
 		snap.cwd,
@@ -91,6 +105,7 @@ export default function (pi: ExtensionAPI) {
 			.runPromise(SubagentManager)
 			.then((manager) => {
 				manager.view.setOnSettled(onSettled);
+				manager.view.setOnStarted((id) => resultDelivery.consume([id]));
 				unsubStatus?.();
 				unsubStatus = manager.view.subscribe(() => updateStatus(manager));
 				updateStatus(manager);
@@ -200,6 +215,11 @@ export default function (pi: ExtensionAPI) {
 					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.model,
 				}),
 			),
+			mode: Type.Optional(
+				StringEnum(SUBAGENT_MODES, {
+					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.mode,
+				}),
+			),
 			reasoning_effort: Type.Optional(
 				StringEnum(REASONING_EFFORTS, {
 					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.reasoningEffort,
@@ -221,6 +241,7 @@ export default function (pi: ExtensionAPI) {
 					prompt: params.prompt,
 					title,
 					cwd,
+					mode: params.mode,
 					model: params.model,
 					reasoningEffort: params.reasoning_effort,
 					parent: {
@@ -241,6 +262,7 @@ export default function (pi: ExtensionAPI) {
 							id: snap.id,
 							title: snap.title,
 							harness: snap.backend,
+							mode: snap.mode,
 							modelLabel: snap.meta.modelLabel ?? "?",
 							cwd,
 						}),
@@ -251,6 +273,7 @@ export default function (pi: ExtensionAPI) {
 					title: snap.title,
 					cwd,
 					harness: snap.backend,
+					mode: snap.mode,
 					model: snap.meta.modelLabel,
 				},
 			};
@@ -376,6 +399,34 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "subagent_send",
+		label: "Steer Subagent",
+		description: SUBAGENT_SEND_TOOL_DESCRIPTION,
+		parameters: Type.Object({
+			id: Type.String({ description: SUBAGENT_SEND_PARAMETER_DESCRIPTIONS.id }),
+			message: Type.String({ description: SUBAGENT_SEND_PARAMETER_DESCRIPTIONS.message }),
+		}),
+		async execute(_toolCallId, params, signal) {
+			const manager = await getManager();
+			if (!manager.view.get(params.id)) {
+				const known = manager.view.list().map((entry) => entry.id);
+				throw new Error(`Unknown subagent id "${params.id}". Known: ${known.join(", ") || "none"}.`);
+			}
+			const message = params.message.trim();
+			if (!message) throw new Error("Provide a non-empty message.");
+			await runTool(getRuntime(), manager.send(params.id, message), {
+				signal,
+				interruptMessage: "Subagent steering aborted.",
+			});
+			resultDelivery.consume([params.id]);
+			return {
+				content: [{ type: "text", text: `Sent guidance to ${params.id}.` }],
+				details: { id: params.id },
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: "subagent_check",
 		label: "Check Subagent",
 		description: SUBAGENT_CHECK_TOOL_DESCRIPTION,
@@ -392,7 +443,8 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(`Unknown subagent id "${params.id}". Known: ${known.join(", ") || "none"}.`);
 			}
 
-			let text = `${describeSubagent(snap)}\nTurns: ${snap.turns}`;
+			const children = manager.view.list().filter((entry) => entry.parentId === snap.id);
+			let text = `${describeSubagent(snap)}\nTurns: ${snap.turns}\nChildren: ${children.map((entry) => entry.id).join(", ") || "none"}`;
 			if (snap.errorText) text += `\nError: ${snap.errorText}`;
 
 			const output = latestText(snap);
@@ -406,7 +458,15 @@ export default function (pi: ExtensionAPI) {
 
 			return {
 				content: [{ type: "text", text }],
-				details: { id: snap.id, status: snap.status, turns: snap.turns },
+				details: {
+					id: snap.id,
+					parentId: snap.parentId,
+					depth: snap.depth,
+					mode: snap.mode,
+					status: snap.status,
+					turns: snap.turns,
+					children: children.map((entry) => entry.id),
+				},
 			};
 		},
 	});
@@ -418,14 +478,20 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({}),
 		async execute() {
 			const manager = await getManager();
-			const subs = manager.view.list();
-			const text = subs.length === 0 ? "No subagents." : subs.map((snap) => describeSubagent(snap)).join("\n");
+			const subs = orderSubagentTree(manager.view.list());
+			const text =
+				subs.length === 0
+					? "No subagents."
+					: subs.map((snap) => `${"  ".repeat(Math.min(snap.depth, 8))}${describeSubagent(snap)}`).join("\n");
 			return {
 				content: [{ type: "text", text }],
 				details: {
 					subagents: subs.map((snap) => ({
 						id: snap.id,
 						title: snap.title,
+						parentId: snap.parentId,
+						depth: snap.depth,
+						mode: snap.mode,
 						harness: snap.backend,
 						status: snap.status,
 					})),

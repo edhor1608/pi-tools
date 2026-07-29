@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { orderSubagentTree } from "./src/domain.ts";
 import { reconcileDashboardSelection, type DashboardSelection } from "./src/ui/takeover.ts";
+
+await test("subagent trees render parent-first without changing sibling order", () => {
+	const ordered = orderSubagentTree([
+		{ id: "root-1", parentId: undefined },
+		{ id: "root-2", parentId: undefined },
+		{ id: "child-1", parentId: "root-1" },
+		{ id: "grandchild", parentId: "child-1" },
+		{ id: "child-2", parentId: "root-1" },
+	]);
+	assert.deepEqual(
+		ordered.map((entry) => entry.id),
+		["root-1", "child-1", "grandchild", "child-2", "root-2"],
+	);
+
+	const orphaned = orderSubagentTree([
+		{ id: "child", parentId: "orphan" },
+		{ id: "orphan", parentId: "pruned" },
+	]);
+	assert.deepEqual(
+		orphaned.map((entry) => entry.id),
+		["orphan", "child"],
+	);
+});
 
 await test("dashboard selection follows its subagent id and falls back by row", () => {
 	const selection: DashboardSelection = { id: "sa-7", index: 6 };

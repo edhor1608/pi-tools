@@ -25,10 +25,22 @@ import { Effect, Queue, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "../backend.ts";
 import type { QueuedMessage, ReasoningEffort, RunOutcome, SpawnTask, SubagentEvent, SubagentMeta, TranscriptPart } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
+import { createOrchestrationServer } from "../orchestration.ts";
 
 const CLAUDE_CONTEXT_WINDOW = 200_000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const PREVIEW_MAX_LENGTH = 4_096;
+const CLAUDE_DISALLOWED_TOOLS = [
+	"Agent",
+	"Task",
+	"TaskCreate",
+	"TaskGet",
+	"TaskUpdate",
+	"TaskList",
+	"TaskOutput",
+	"TaskStop",
+	"AskUserQuestion",
+] as const;
 
 // --- Binary resolution --------------------------------------------------------
 
@@ -126,7 +138,7 @@ class ClaudeInput implements AsyncIterable<SDKUserMessage> {
 /**
  * Claude's deprecated-but-supported maxThinkingTokens is the closest match to
  * the shared numeric scale requested by this extension. Zero explicitly
- * disables extended thinking in SDK 0.3.207; an omitted effort leaves the CLI
+ * disables extended thinking in SDK 0.3.220; an omitted effort leaves the CLI
  * default untouched.
  */
 const THINKING_BUDGETS = {
@@ -194,7 +206,7 @@ function assistantParts(message: SDKAssistantMessage): TranscriptPart[] {
 	return parts;
 }
 
-/** Claude Code's project-directory escaping, verified against CLI 2.1.207. */
+/** Claude Code's project-directory escaping, verified against CLI 2.1.220. */
 function sessionFilePath(cwd: string, sessionId: string) {
 	const projectDirectory = cwd.replace(/[/.]/g, "-");
 	return path.join(os.homedir(), ".claude", "projects", projectDirectory, `${sessionId}.jsonl`);
@@ -288,6 +300,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 
 		const thinkingBudget = task.reasoningEffort ? THINKING_BUDGETS[task.reasoningEffort] : undefined;
 		const claudeBinary = resolveClaudeBinary();
+		const orchestrationServer = task.orchestration ? createOrchestrationServer(task.orchestration) : undefined;
 		const nativeQuery = yield* Effect.try({
 			try: () =>
 				query({
@@ -299,8 +312,10 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 						// its tools without interactive permission checks.
 						permissionMode: "bypassPermissions",
 						allowDangerouslySkipPermissions: true,
-						// Keep orchestration in the parent and avoid headless user prompts.
-						disallowedTools: ["Agent", "Task", "AskUserQuestion"],
+						// Host-managed orchestration is exposed through the shared manager.
+						// Native Agent/Task would create a second, untracked agent tree.
+						disallowedTools: [...CLAUDE_DISALLOWED_TOOLS],
+						...(orchestrationServer ? { mcpServers: { pi_subagents: orchestrationServer } } : {}),
 						includePartialMessages: true,
 						abortController,
 						...(claudeBinary ? { pathToClaudeCodeExecutable: claudeBinary } : {}),
@@ -601,7 +616,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 						const receipt = await nativeQuery.interrupt();
 						const hasOwnQueuedMessage = receipt?.still_queued?.some((uuid) => state.submittedUuids.has(uuid));
 						if (hasOwnQueuedMessage) {
-							// 0.3.207 exposes cancellation receipts but no public per-message
+							// 0.3.220 exposes cancellation receipts but no public per-message
 							// cancel method. Closing is the only way to prevent a cancelled
 							// queued prompt from immediately starting another turn.
 							input.end();
