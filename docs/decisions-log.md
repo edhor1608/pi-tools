@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-07-29 Host-Managed Claude Orchestration
+
+### Context
+
+Claude Code cannot be used as the main Pi model through the user's subscription, but Claude models are valuable as autonomous orchestrators and advisors. A Claude orchestrator must be free to choose and direct Pi or Claude workers while the main Pi agent and user can still inspect, steer, and cancel the resulting work. Claude Code's native `Agent` system can coexist with custom SDK tools, but it would create a second agent tree that the current manager and UI do not represent.
+
+### Decision
+
+Add an explicit orchestrator mode for Claude sessions. Give those sessions scoped, host-backed subagent controls through an in-process Claude Agent SDK MCP server. Extend the existing manager from a flat registry to an ownership tree and route nested results to their immediate parent. Keep the host as a thin control plane: no prescribed workflow, approvals, queue, role system, or concurrency limit. Keep Claude's native `Agent` and `Task` tools disabled until their task IDs, sidechain transcripts, lifecycle, and cancellation can be represented in the same host graph. This supersedes the blanket recursive-subagent restriction in **2026-07-29 Pi And Claude Subagents** while preserving it for ordinary workers.
+
+### Rationale
+
+An in-process MCP bridge gives Claude direct autonomous delegation without IPC or a second runtime. Reusing the shared manager preserves Pi and Claude workers, normalized transcripts, steering, cancellation, and `/subagents` visibility. Explicit orchestrator mode prevents ordinary Claude workers from recursively delegating unless their caller intentionally grants that capability.
+
+### Consequences
+
+Orchestrated runs are process-scoped rooted trees. The main Pi session can control every node, while an orchestrator can control only its descendants. Granting orchestrator mode remains explicit at every level and is capped at depth eight; flat worker fan-out retains the existing lack of a concurrency limit. Unawaited child results return to their immediate parent and can restart an idle orchestrator; root completion waits until active descendants have returned. Cancelling or failing an orchestrator cancels its active subtree. Native Claude agents remain unavailable in this mode despite being technically compatible with the MCP controls.
+
 ## 2026-07-29 Route Claude Models Through Claude Code
 
 ### Context

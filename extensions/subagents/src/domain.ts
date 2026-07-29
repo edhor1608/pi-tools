@@ -12,6 +12,9 @@ import { Data } from "effect";
 export const BACKEND_NAMES = ["pi", "claude"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
 
+export const SUBAGENT_MODES = ["worker", "orchestrator"] as const;
+export type SubagentMode = (typeof SUBAGENT_MODES)[number];
+
 /**
  * Shared reasoning-effort scale (Pi's thinking levels). Pi uses it directly
  * and Claude translates it to a thinking budget. Omitted means backend
@@ -32,10 +35,38 @@ export interface ParentContext {
 	readonly modelRegistry?: ModelRegistry;
 }
 
+export interface NestedSpawnRequest {
+	readonly prompt: string;
+	readonly title: string;
+	readonly harness: BackendName;
+	readonly workingDir?: string;
+	readonly model?: string;
+	readonly reasoningEffort?: ReasoningEffort;
+	readonly mode?: SubagentMode;
+}
+
+export interface NestedCancelResult {
+	readonly id: string;
+	readonly title: string;
+	readonly status: SubagentStatus;
+	readonly cancelled: boolean;
+}
+
+/** Host controls bound to one orchestrator's descendant tree. */
+export interface OrchestrationController {
+	spawn(request: NestedSpawnRequest, signal?: AbortSignal): Promise<SubagentSnapshot>;
+	wait(ids: ReadonlyArray<string>, signal?: AbortSignal): Promise<ReadonlyArray<SubagentSnapshot>>;
+	cancel(ids: ReadonlyArray<string>, signal?: AbortSignal): Promise<ReadonlyArray<NestedCancelResult>>;
+	send(id: string, text: string, signal?: AbortSignal): Promise<void>;
+	get(id: string): Promise<SubagentSnapshot | undefined>;
+	list(): Promise<ReadonlyArray<SubagentSnapshot>>;
+}
+
 export interface SpawnTask {
 	readonly prompt: string;
 	readonly title: string;
 	readonly cwd: string;
+	readonly mode?: SubagentMode;
 	/**
 	 * Generic model hint, interpreted per backend:
 	 * pi: "provider/model-id" or bare model id; claude: model alias.
@@ -45,6 +76,8 @@ export interface SpawnTask {
 	/** Shared effort scale; each backend maps it to its native equivalent. */
 	readonly reasoningEffort?: ReasoningEffort;
 	readonly parent: ParentContext;
+	/** Manager-injected controls; only present for orchestrated Claude sessions. */
+	readonly orchestration?: OrchestrationController;
 }
 
 export interface SubagentMeta {
@@ -175,11 +208,16 @@ export type SubagentEvent =
  */
 export interface SubagentSnapshot {
 	readonly id: string;
+	readonly parentId?: string;
+	readonly depth: number;
+	readonly mode: SubagentMode;
 	readonly backend: BackendName;
 	readonly title: string;
 	readonly prompt: string;
 	readonly cwd: string;
 	readonly status: SubagentStatus;
+	/** The native turn is idle while active descendants are still returning. */
+	readonly waitingForChildren: boolean;
 	readonly createdAt: number;
 	readonly settledAt?: number;
 	readonly errorText?: string;
@@ -194,6 +232,28 @@ export interface SubagentSnapshot {
 	readonly finalText: string;
 	/** Count of finalized assistant messages (for subagent_check). */
 	readonly turns: number;
+}
+
+/** Parent-first tree order while preserving spawn order between siblings. */
+export function orderSubagentTree<T extends Pick<SubagentSnapshot, "id" | "parentId">>(snapshots: ReadonlyArray<T>) {
+	const children = new Map<string | undefined, T[]>();
+	for (const snap of snapshots) {
+		const siblings = children.get(snap.parentId) ?? [];
+		siblings.push(snap);
+		children.set(snap.parentId, siblings);
+	}
+	const ids = new Set(snapshots.map((snap) => snap.id));
+	const seen = new Set<string>();
+	const ordered: T[] = [];
+	const visit = (snap: T) => {
+		if (seen.has(snap.id)) return;
+		seen.add(snap.id);
+		ordered.push(snap);
+		for (const child of children.get(snap.id) ?? []) visit(child);
+	};
+	for (const root of snapshots.filter((snap) => !snap.parentId || !ids.has(snap.parentId))) visit(root);
+	for (const snap of snapshots) visit(snap);
+	return ordered;
 }
 
 /** Final text, or the live streaming buffer while a run is active (v1 `latestOutput`). */
