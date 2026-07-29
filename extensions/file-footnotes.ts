@@ -272,6 +272,8 @@ const getLatestAssistantText = (ctx: { sessionManager: { getBranch: () => Sessio
 };
 
 const openUriWithSystem = async (pi: ExtensionAPI, uri: string): Promise<void> => {
+	const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(uri)?.[1]?.toLowerCase();
+	if (scheme !== "file" && scheme !== "vscode") throw new Error(`Refusing to open unsupported URI scheme: ${String(scheme)}`);
 	const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
 	const args = process.platform === "win32" ? ["/c", "start", "", uri] : [uri];
 	await pi.exec(command, args, { timeout: 5000 });

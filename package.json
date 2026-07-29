@@ -38,7 +38,7 @@
   "scripts": {
     "clean": "echo 'nothing to clean'",
     "build": "echo 'nothing to build'",
-    "check": "bun run typecheck && bun run test:file-footnotes && bun run test:stash-release && bun run test:structured-compaction",
+    "check": "bun run typecheck && bun run test:file-footnotes && bun run test:stash-release && bun run test:structured-compaction && bun run test:packaged-defaults-fallback",
     "analyze": "bun ./scripts/analyze-session.ts",
     "test:stash-release": "bun ./scripts/test-stash-release.ts",
     "test:file-footnotes": "bun ./scripts/test-file-footnotes.ts",
