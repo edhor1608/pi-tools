@@ -11,6 +11,8 @@ Each child is headless, has its own context window, cannot see the parent conver
 
 Use `pi` by default. A Pi child inherits the parent model and thinking level unless `model` or `reasoning_effort` is supplied. Models are addressed as `provider/model-id` when ambiguity is possible.
 
+Claude-family models always run through the `claude` harness. If a spawn requests `harness: "pi"` with a Claude model such as `opencode/claude-fable-5` or the Claude Code alias `fable`, the extension routes it to Claude Code and drops any provider prefix. This also applies when a Pi spawn would inherit a Claude model from its parent.
+
 Use `claude` when the user asks for Claude Code or an independent Claude perspective is useful. Omit `model` and `reasoning_effort` to preserve Claude Code's current defaults. Claude requires the local Claude Code executable to be installed and authenticated.
 
 Reasoning levels accepted by both harnesses are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. Claude maps these to thinking-token budgets.

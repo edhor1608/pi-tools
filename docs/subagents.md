@@ -11,6 +11,8 @@ The extension gives the parent Pi session autonomous background workers with iso
 - `pi` creates an in-process `AgentSession`, inherits the parent model and thinking level by default, loads resources for the child working directory, and writes a normal Pi session.
 - `claude` drives the installed Claude Code executable through `@anthropic-ai/claude-agent-sdk`, preserving its login and defaults when model and reasoning parameters are omitted. Claude's native project transcript remains authoritative.
 
+Claude-family model hints are strict routing signals. A Pi spawn that explicitly requests, or would inherit, a Claude model is sent to the Claude backend instead. Provider-qualified hints such as `opencode/claude-fable-5` become the Claude Code model name `claude-fable-5`; Claude Code aliases `fable`, `haiku`, `opus`, and `sonnet` route directly. An explicit Claude spawn with no model still preserves Claude Code's default rather than inheriting the parent model.
+
 The manager imposes no concurrency limit. It retains at most 64 settled snapshots, but running sessions are never pruned. Effect scope finalizers interrupt and dispose children during cancellation, pruning, and parent shutdown.
 
 Children cannot call the subagent management tools. Claude's native `Agent`, `Task`, and `AskUserQuestion` tools are disabled. Both backends otherwise retain normal host permissions.

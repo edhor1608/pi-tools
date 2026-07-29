@@ -208,7 +208,6 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const manager = await getManager();
-			const harness = params.harness;
 
 			const cwd = path.resolve(ctx.cwd, params.working_dir ?? ".");
 			if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
@@ -218,7 +217,7 @@ export default function (pi: ExtensionAPI) {
 			const title = params.name.trim().slice(0, 160) || "subagent";
 			const snap = await runTool(
 				getRuntime(),
-				manager.spawn(harness, {
+				manager.spawn(params.harness, {
 					prompt: params.prompt,
 					title,
 					cwd,
@@ -241,7 +240,7 @@ export default function (pi: ExtensionAPI) {
 						text: buildSubagentSpawnResult({
 							id: snap.id,
 							title: snap.title,
-							harness,
+							harness: snap.backend,
 							modelLabel: snap.meta.modelLabel ?? "?",
 							cwd,
 						}),
@@ -251,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 					id: snap.id,
 					title: snap.title,
 					cwd,
-					harness,
+					harness: snap.backend,
 					model: snap.meta.modelLabel,
 				},
 			};

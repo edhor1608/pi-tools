@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-07-29 Route Claude Models Through Claude Code
+
+### Context
+
+The spawn API exposes both a harness and a model hint. That allowed a caller to request the Pi harness with an OpenCode Claude model such as `opencode/claude-fable-5`, even though Claude models are intended to consume the existing Claude Code login and subscription. Prompt guidance alone did not prevent the parent agent from selecting this mismatched combination.
+
+### Decision
+
+Treat Claude-family models and Claude Code's `fable`, `haiku`, `opus`, and `sonnet` aliases as strict routing signals. If a Pi spawn explicitly requests or would inherit a Claude model, route it to the Claude backend and pass the unqualified model id to Claude Code. Apply the same normalization to provider-qualified model hints already sent to the Claude backend. Preserve Claude Code defaults when the Claude harness is explicitly selected without a model.
+
+### Rationale
+
+The model choice states the user's intended execution provider more directly than a mistaken harness argument. Enforcing the invariant in the manager covers tool calls and future callers, while provider-prefix removal converts Pi model references into the model names accepted by Claude Code.
+
+### Consequences
+
+Claude-family models can no longer run through Pi subagents or OpenCode routing. They require an installed, authenticated Claude Code executable and consume its allowance. The spawn result reports the effective Claude harness rather than the originally requested Pi harness.
+
 ## 2026-07-29 Pi And Claude Subagents
 
 ### Context
