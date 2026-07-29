@@ -1,5 +1,45 @@
 # Decisions Log
 
+## 2026-07-29 Reduce Package To Three Extensions
+
+### Context
+
+The package had grown to seven extensions, but only file footnotes, stash, and structured compaction are wanted in the active setup. Keeping disabled code still installs dependencies, expands the maintenance surface, and makes every Pi upgrade broader than necessary.
+
+### Decision
+
+Remove context-health, context-files, model-system-prompt, and notify completely from package resources, source, tests, defaults, and current documentation. Keep historical decisions in this log as superseded records. Remove seeded global model-system-prompt files from the active Pi installation.
+
+This supersedes **2026-04-12 Context Health Extension**, **2026-04-13 Notify Extension**, and **2026-04-14 Context Files Extension**.
+
+### Rationale
+
+Three maintained extensions are simpler than seven installed-but-filtered extensions. Deletion also removes the unrelated context-files compatibility failure and avoids carrying model prompt defaults for models that are no longer active.
+
+### Consequences
+
+Installing `pi-tools` now exposes exactly three resources. Context-file filtering, context-health telemetry, package-owned model prompts, terminal title animation, and native completion notifications are no longer provided. Existing session history is retained because it is user data, not installed extension state.
+
+## 2026-07-29 Pi 0.82 Port And Public File Footnotes
+
+### Context
+
+Pi moved its packages from `@mariozechner/*` to `@earendil-works/*`, changed the model/auth runtime, exposed the Responses converter publicly, added finalized-message replacement, and expanded compaction results. The old file-footnote renderer patched private TUI classes, while structured compaction imported a provider file and Pi version through absolute Homebrew paths.
+
+### Decision
+
+Set Pi `0.82.1` as the package baseline. Port every package import to the current scope so one package install has one Pi runtime. Keep structured compaction extension-owned, but use public conversion/auth APIs, current Codex headers, compact-result usage, and display-only report entries. Replace the file-footnote renderer patch with a persisted markdown transformation returned from `message_end`. Keep stash semantics unchanged while widening its shared UI helpers to `ExtensionContext`.
+
+This supersedes the private-renderer portion of **2026-04-14 File Footnotes Extension** and the custom-message transport in **2026-04-12 In-Chat Compaction Report Command**. Their product intent remains current.
+
+### Rationale
+
+A mixed old/new Pi dependency graph would preserve hidden compatibility risks. Public hooks remove absolute install paths and TUI prototype coupling. Persisted footnotes trade collapsibility for stable resume/export behavior, which is the selected product direction. Display-only reports retain the in-session UI without adding diagnostics to model context.
+
+### Consequences
+
+The package requires Pi `>=0.82.1 <0.83.0`. File footnotes are always visible and no longer use `Ctrl+Shift+O`. `complete()` temporarily comes from `pi-ai/compat` and must be revisited when Pi removes that bridge. Provider-native compaction remains contract-tested and requires a live canary on future Pi or Codex payload changes.
+
 ## 2026-05-20 Agent Skill Tracker Setup
 
 ### Context

@@ -1,27 +1,10 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getCapabilities, hyperlink, Key, Markdown, wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const piCodingAgentEntry = new URL(await import.meta.resolve("@mariozechner/pi-coding-agent"));
-const piCodingAgentDistDir = dirname(piCodingAgentEntry.pathname);
-const { AssistantMessageComponent } = await import(
-	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "assistant-message.js")).href,
-);
-const { rawKeyHint } = await import(
-	pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "components", "keybinding-hints.js")).href,
-);
-const { InteractiveMode } = await import(pathToFileURL(join(piCodingAgentDistDir, "modes", "interactive", "interactive-mode.js")).href);
-
-const PATCHED = Symbol.for("stead.pi-tools.fileFootnotes.patched");
-const ASSISTANT_MARKDOWN = Symbol.for("stead.pi-tools.fileFootnotes.assistantMarkdown");
-const FOOTNOTE_STATE = Symbol.for("stead.pi-tools.fileFootnotes.state");
-const PATCHED_CACHE = Symbol.for("stead.pi-tools.fileFootnotes.cache");
-const FOOTNOTE_VISIBILITY = Symbol.for("stead.pi-tools.fileFootnotes.visibility");
-const FOOTNOTE_TOGGLE_SHORTCUT = Key.ctrlShift("o");
-
-export const FILE_FOOTNOTES_TOGGLE_SHORTCUT = FOOTNOTE_TOGGLE_SHORTCUT;
+const FOOTNOTE_HEADER = "File references:";
 
 interface FileFootnoteItem {
 	index: number;
@@ -34,15 +17,6 @@ interface FileFootnoteItem {
 	vscodeUrl?: string;
 }
 
-interface FileFootnoteState {
-	items: FileFootnoteItem[];
-	itemByHref: Map<string, FileFootnoteItem>;
-}
-
-interface FootnoteVisibilityState {
-	expanded: boolean;
-}
-
 interface ParsedFileTarget {
 	displayHref: string;
 	filesystemPath?: string;
@@ -50,88 +24,33 @@ interface ParsedFileTarget {
 	column?: number;
 }
 
-interface MarkdownWithFootnotes extends Markdown {
-	[ASSISTANT_MARKDOWN]?: boolean;
-	[FOOTNOTE_STATE]?: FileFootnoteState;
-	[PATCHED_CACHE]?: {
-		text: string;
-		width: number;
-		lines: string[];
-		expanded: boolean;
-	};
-	cachedText?: string;
-	cachedWidth?: number;
-	cachedLines?: string[];
-	paddingX: number;
-	theme: {
-		link: (text: string) => string;
-		linkUrl: (text: string) => string;
-		underline: (text: string) => string;
-	};
-	defaultTextStyle?: {
-		bgColor?: (text: string) => string;
-	};
-	renderInlineTokens(tokens: any[], styleContext?: { applyText: (text: string) => string; stylePrefix: string }): string;
-}
-
-const stripAnsi = (value: string): string =>
-	value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
-
 const isAbsoluteWindowsPath = (value: string): boolean => /^[A-Za-z]:[\\/]/.test(value);
 
 const isFileHref = (href: string): boolean => {
 	if (!href) return false;
-	if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:") || href.startsWith("ftp://")) return false;
-	if (href.startsWith("file://")) return true;
-	if (href.startsWith("/")) return true;
-	if (href.startsWith("~/")) return true;
-	return isAbsoluteWindowsPath(href);
-};
-
-const getFootnoteVisibilityState = (): FootnoteVisibilityState => {
-	const globalScope = globalThis as Record<PropertyKey, unknown>;
-	const existing = globalScope[FOOTNOTE_VISIBILITY] as FootnoteVisibilityState | undefined;
-	if (existing) return existing;
-	const created: FootnoteVisibilityState = { expanded: false };
-	globalScope[FOOTNOTE_VISIBILITY] = created;
-	return created;
-};
-
-export const getFileFootnotesExpanded = (): boolean => getFootnoteVisibilityState().expanded;
-
-export const setFileFootnotesExpanded = (expanded: boolean): boolean => {
-	getFootnoteVisibilityState().expanded = expanded;
-	return expanded;
-};
-
-export const toggleFileFootnotesExpanded = (): boolean => {
-	const visibility = getFootnoteVisibilityState();
-	visibility.expanded = !visibility.expanded;
-	return visibility.expanded;
+	if (/^(?:https?|mailto|ftp):\/\//.test(href)) return false;
+	return href.startsWith("file://") || href.startsWith("/") || href.startsWith("~/") || isAbsoluteWindowsPath(href);
 };
 
 const isEscaped = (text: string, index: number): boolean => {
-	let backslashCount = 0;
-	for (let i = index - 1; i >= 0 && text[i] === "\\"; i--) backslashCount++;
-	return backslashCount % 2 === 1;
+	let count = 0;
+	for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor--) count++;
+	return count % 2 === 1;
 };
 
 const findUnescapedChar = (text: string, char: string, startIndex = 0): number => {
-	for (let i = startIndex; i < text.length; i++) {
-		if (text[i] === char && !isEscaped(text, i)) return i;
+	for (let index = startIndex; index < text.length; index++) {
+		if (text[index] === char && !isEscaped(text, index)) return index;
 	}
 	return -1;
 };
 
 const findMatchingDelimiter = (text: string, startIndex: number, openChar: string, closeChar: string): number => {
 	let depth = 0;
-	for (let i = startIndex; i < text.length; i++) {
-		if (isEscaped(text, i)) continue;
-		if (text[i] === openChar) depth++;
-		else if (text[i] === closeChar) {
-			depth--;
-			if (depth === 0) return i;
-		}
+	for (let index = startIndex; index < text.length; index++) {
+		if (isEscaped(text, index)) continue;
+		if (text[index] === openChar) depth++;
+		else if (text[index] === closeChar && --depth === 0) return index;
 	}
 	return -1;
 };
@@ -139,85 +58,44 @@ const findMatchingDelimiter = (text: string, startIndex: number, openChar: strin
 const stripOptionalLinkTitle = (destination: string): string => {
 	const trimmed = destination.trim();
 	if (trimmed.startsWith("<")) {
-		const closingAngleIndex = findUnescapedChar(trimmed, ">", 1);
-		if (closingAngleIndex !== -1) return trimmed.slice(1, closingAngleIndex).trim();
+		const close = findUnescapedChar(trimmed, ">", 1);
+		if (close !== -1) return trimmed.slice(1, close).trim();
 	}
 	return trimmed.replace(/\s+(?:"(?:\\"|[^"])*"|'(?:\\'|[^'])*'|\([^()]*\))\s*$/, "").trim();
-};
-
-const collectMarkdownFileHrefs = (text: string): string[] => {
-	const hrefs: string[] = [];
-	for (let i = 0; i < text.length; i++) {
-		const char = text[i];
-		if (char === "<" && !isEscaped(text, i)) {
-			const closingAngleIndex = findUnescapedChar(text, ">", i + 1);
-			if (closingAngleIndex !== -1) {
-				const candidate = text.slice(i + 1, closingAngleIndex).trim();
-				if (isFileHref(candidate)) {
-					hrefs.push(candidate);
-					i = closingAngleIndex;
-					continue;
-				}
-			}
-		}
-		if (char !== "[" || isEscaped(text, i) || text[i - 1] === "!") continue;
-		const labelEnd = findMatchingDelimiter(text, i, "[", "]");
-		if (labelEnd === -1) continue;
-		let openParenIndex = labelEnd + 1;
-		while (openParenIndex < text.length && /\s/.test(text[openParenIndex]!)) openParenIndex++;
-		if (text[openParenIndex] !== "(") continue;
-		const closeParenIndex = findMatchingDelimiter(text, openParenIndex, "(", ")");
-		if (closeParenIndex === -1) continue;
-		const href = stripOptionalLinkTitle(text.slice(openParenIndex + 1, closeParenIndex));
-		if (isFileHref(href)) hrefs.push(href);
-		i = closeParenIndex;
-	}
-	return hrefs;
 };
 
 const parseHashLocation = (hash: string): { line?: number; column?: number } => {
 	const match = /^#L(\d+)(?:C(\d+))?$/.exec(hash);
 	if (!match) return {};
-	const line = Number(match[1]);
-	const column = match[2] ? Number(match[2]) : undefined;
-	return {
-		line: Number.isFinite(line) ? line : undefined,
-		column: column !== undefined && Number.isFinite(column) ? column : undefined,
-	};
+	return { line: Number(match[1]), column: match[2] ? Number(match[2]) : undefined };
 };
 
 const splitPathLocationSuffix = (href: string): { pathPart: string; suffix: string; line?: number; column?: number } => {
-	const hashMatch = /#L(\d+)(?:C(\d+))?$/.exec(href);
-	if (hashMatch && hashMatch.index >= 0) {
-		const line = Number(hashMatch[1]);
-		const column = hashMatch[2] ? Number(hashMatch[2]) : undefined;
+	const hash = /#L(\d+)(?:C(\d+))?$/.exec(href);
+	if (hash?.index !== undefined) {
 		return {
-			pathPart: href.slice(0, hashMatch.index),
-			suffix: hashMatch[0],
-			line: Number.isFinite(line) ? line : undefined,
-			column: column !== undefined && Number.isFinite(column) ? column : undefined,
+			pathPart: href.slice(0, hash.index),
+			suffix: hash[0],
+			line: Number(hash[1]),
+			column: hash[2] ? Number(hash[2]) : undefined,
 		};
 	}
 	const lastSlash = Math.max(href.lastIndexOf("/"), href.lastIndexOf("\\"));
-	const colonMatch = /:(\d+)(?::(\d+))?$/.exec(href);
-	if (colonMatch && colonMatch.index > lastSlash) {
-		const line = Number(colonMatch[1]);
-		const column = colonMatch[2] ? Number(colonMatch[2]) : undefined;
+	const colon = /:(\d+)(?::(\d+))?$/.exec(href);
+	if (colon && colon.index > lastSlash) {
 		return {
-			pathPart: href.slice(0, colonMatch.index),
-			suffix: colonMatch[0],
-			line: Number.isFinite(line) ? line : undefined,
-			column: column !== undefined && Number.isFinite(column) ? column : undefined,
+			pathPart: href.slice(0, colon.index),
+			suffix: colon[0],
+			line: Number(colon[1]),
+			column: colon[2] ? Number(colon[2]) : undefined,
 		};
 	}
 	return { pathPart: href, suffix: "" };
 };
 
-const normalizeFilesystemPath = (pathPart: string): string | undefined => {
-	if (pathPart.startsWith("~/")) return join(homedir(), pathPart.slice(2));
-	if (pathPart.startsWith("/")) return pathPart;
-	if (isAbsoluteWindowsPath(pathPart)) return pathPart;
-	return undefined;
+const normalizeFilesystemPath = (path: string): string | undefined => {
+	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+	return path.startsWith("/") || isAbsoluteWindowsPath(path) ? path : undefined;
 };
 
 const parseFileTarget = (href: string): ParsedFileTarget => {
@@ -225,266 +103,180 @@ const parseFileTarget = (href: string): ParsedFileTarget => {
 		try {
 			const url = new URL(href);
 			const filesystemPath = fileURLToPath(url);
-			const { line, column } = parseHashLocation(url.hash || "");
-			return {
-				displayHref: `${filesystemPath}${url.hash || ""}`,
-				filesystemPath,
-				line,
-				column,
-			};
+			return { displayHref: `${filesystemPath}${url.hash}`, filesystemPath, ...parseHashLocation(url.hash) };
 		} catch {
 			return { displayHref: href };
 		}
 	}
 	const { pathPart, suffix, line, column } = splitPathLocationSuffix(href);
-	return {
-		displayHref: `${pathPart}${suffix}`,
-		filesystemPath: normalizeFilesystemPath(pathPart),
-		line,
-		column,
-	};
-};
-
-const buildDefaultOpenUrl = (target: ParsedFileTarget): string | undefined => {
-	if (!target.filesystemPath) return undefined;
-	return pathToFileURL(target.filesystemPath).href;
+	return { displayHref: `${pathPart}${suffix}`, filesystemPath: normalizeFilesystemPath(pathPart), line, column };
 };
 
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 	if (!target.filesystemPath) return undefined;
 	const fileUrl = pathToFileURL(target.filesystemPath).href;
-	const baseUrl =
-		process.platform === "win32"
-			? fileUrl.replace(/^file:\/\/\//, "vscode://file/")
-			: fileUrl.replace(/^file:\/\//, "vscode://file/");
-	if (!target.line) return baseUrl;
-	if (!target.column) return `${baseUrl}:${target.line}`;
-	return `${baseUrl}:${target.line}:${target.column}`;
+	const base = process.platform === "win32" ? fileUrl.replace(/^file:\/\/\//, "vscode://file/") : fileUrl.replace(/^file:\/\//, "vscode://file/");
+	return target.line ? `${base}:${target.line}${target.column ? `:${target.column}` : ""}` : base;
 };
 
-const formatTerminalHyperlink = (url: string | undefined, label: string): string => {
-	if (!url || !getCapabilities().hyperlinks) return label;
-	return hyperlink(label, url);
-};
-
-const deriveInlineLabel = (href: string): string => {
+const createFootnoteItem = (href: string, index: number): FileFootnoteItem => {
 	const target = parseFileTarget(href);
-	const slashIndex = Math.max(target.displayHref.lastIndexOf("/"), target.displayHref.lastIndexOf("\\"));
-	const base = slashIndex === -1 ? target.displayHref : target.displayHref.slice(slashIndex + 1);
-	return base || target.displayHref;
-};
-
-const registerFootnoteItem = (state: FileFootnoteState, href: string): FileFootnoteItem => {
-	const existing = state.itemByHref.get(href);
-	if (existing) return existing;
-	const target = parseFileTarget(href);
-	const item: FileFootnoteItem = {
-		index: state.items.length + 1,
+	return {
+		index,
 		href,
 		displayHref: target.displayHref,
 		filesystemPath: target.filesystemPath,
 		line: target.line,
 		column: target.column,
-		openUrl: buildDefaultOpenUrl(target),
+		openUrl: target.filesystemPath ? pathToFileURL(target.filesystemPath).href : undefined,
 		vscodeUrl: buildVsCodeUrl(target),
 	};
-	state.items.push(item);
-	state.itemByHref.set(href, item);
-	return item;
 };
 
-const registerFootnote = (markdown: MarkdownWithFootnotes, href: string): FileFootnoteItem | undefined => {
-	const state = markdown[FOOTNOTE_STATE];
-	if (!state) return undefined;
-	return registerFootnoteItem(state, href);
+const deriveInlineLabel = (href: string): string => {
+	const display = parseFileTarget(href).displayHref;
+	const slash = Math.max(display.lastIndexOf("/"), display.lastIndexOf("\\"));
+	return display.slice(slash + 1) || display;
 };
 
-const buildFootnoteHeaderLine = (expanded: boolean, itemCount: number): string => {
-	if (expanded) return `${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to hide file footnotes")}`;
-	const noun = itemCount === 1 ? "reference" : "references";
-	return `${itemCount} file ${noun} hidden ${rawKeyHint(FOOTNOTE_TOGGLE_SHORTCUT, "to show")}`;
+const markdownDestination = (href: string): string => `<${href.replaceAll("<", "%3C").replaceAll(">", "%3E")}>`;
+
+const codeSpan = (value: string): string => {
+	const longestRun = Math.max(0, ...Array.from(value.matchAll(/`+/g), (match) => match[0].length));
+	const fence = "`".repeat(longestRun + 1);
+	return `${fence}${value}${fence}`;
+};
+
+const rewriteMarkdownLine = (line: string, register: (href: string) => FileFootnoteItem): string => {
+	let output = "";
+	for (let index = 0; index < line.length;) {
+		if (line[index] === "`" && !isEscaped(line, index)) {
+			const run = /^`+/.exec(line.slice(index))?.[0] ?? "`";
+			const close = line.indexOf(run, index + run.length);
+			if (close !== -1) {
+				output += line.slice(index, close + run.length);
+				index = close + run.length;
+				continue;
+			}
+		}
+		if (line[index] === "<" && !isEscaped(line, index)) {
+			const close = findUnescapedChar(line, ">", index + 1);
+			if (close !== -1) {
+				const href = line.slice(index + 1, close).trim();
+				if (isFileHref(href)) {
+					const item = register(href);
+					output += `${deriveInlineLabel(href)} [[${item.index}]](${markdownDestination(href)})`;
+					index = close + 1;
+					continue;
+				}
+			}
+		}
+		if (line[index] === "[" && line[index - 1] !== "!" && !isEscaped(line, index)) {
+			const labelEnd = findMatchingDelimiter(line, index, "[", "]");
+			let openParen = labelEnd + 1;
+			while (labelEnd !== -1 && /\s/.test(line[openParen] ?? "")) openParen++;
+			if (labelEnd !== -1 && line[openParen] === "(") {
+				const closeParen = findMatchingDelimiter(line, openParen, "(", ")");
+				if (closeParen !== -1) {
+					const href = stripOptionalLinkTitle(line.slice(openParen + 1, closeParen));
+					if (isFileHref(href)) {
+						const item = register(href);
+						output += `${line.slice(index + 1, labelEnd)} [[${item.index}]](${markdownDestination(href)})`;
+						index = closeParen + 1;
+						continue;
+					}
+				}
+			}
+		}
+		output += line[index];
+		index++;
+	}
+	return output;
+};
+
+export const rewriteFileLinksAsFootnotes = (text: string): string => {
+	if (text.includes(`\n\n${FOOTNOTE_HEADER}\n`)) return text;
+	const items: FileFootnoteItem[] = [];
+	const byHref = new Map<string, FileFootnoteItem>();
+	const register = (href: string): FileFootnoteItem => {
+		const existing = byHref.get(href);
+		if (existing) return existing;
+		const item = createFootnoteItem(href, items.length + 1);
+		items.push(item);
+		byHref.set(href, item);
+		return item;
+	};
+	let fencedBy: "`" | "~" | undefined;
+	const rewritten = text.split("\n").map((line) => {
+		const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+		if (fence) {
+			const marker = fence[0] as "`" | "~";
+			if (!fencedBy) fencedBy = marker;
+			else if (fencedBy === marker) fencedBy = undefined;
+			return line;
+		}
+		return fencedBy ? line : rewriteMarkdownLine(line, register);
+	}).join("\n");
+	if (items.length === 0) return text;
+	const references = items.map((item) => `- [[${item.index}]](${markdownDestination(item.href)}) ${codeSpan(item.displayHref)}`);
+	return `${rewritten}\n\n${FOOTNOTE_HEADER}\n${references.join("\n")}`;
+};
+
+const collectMarkdownFileHrefs = (text: string): string[] => {
+	const hrefs: string[] = [];
+	for (let index = 0; index < text.length; index++) {
+		if (text[index] === "<" && !isEscaped(text, index)) {
+			const close = findUnescapedChar(text, ">", index + 1);
+			if (close !== -1) {
+				const href = text.slice(index + 1, close).trim();
+				if (isFileHref(href)) hrefs.push(href);
+				index = close;
+			}
+			continue;
+		}
+		if (text[index] !== "[" || text[index - 1] === "!" || isEscaped(text, index)) continue;
+		const labelEnd = findMatchingDelimiter(text, index, "[", "]");
+		let openParen = labelEnd + 1;
+		while (labelEnd !== -1 && /\s/.test(text[openParen] ?? "")) openParen++;
+		if (labelEnd === -1 || text[openParen] !== "(") continue;
+		const closeParen = findMatchingDelimiter(text, openParen, "(", ")");
+		if (closeParen === -1) continue;
+		const href = stripOptionalLinkTitle(text.slice(openParen + 1, closeParen));
+		if (isFileHref(href)) hrefs.push(href);
+		index = closeParen;
+	}
+	return hrefs;
 };
 
 const extractFileFootnotesFromText = (text: string): FileFootnoteItem[] => {
-	const state: FileFootnoteState = {
-		items: [],
-		itemByHref: new Map<string, FileFootnoteItem>(),
-	};
-	for (const href of collectMarkdownFileHrefs(text.replace(/\t/g, "   "))) {
-		registerFootnoteItem(state, href);
-	}
-	return state.items;
+	const unique = [...new Set(collectMarkdownFileHrefs(text))];
+	return unique.map((href, index) => createFootnoteItem(href, index + 1));
 };
 
-const buildFootnoteLines = (markdown: MarkdownWithFootnotes, width: number, items: FileFootnoteItem[]): string[] => {
-	if (items.length === 0) return [];
-	const contentWidth = Math.max(1, width - markdown.paddingX * 2);
-	const leftMargin = " ".repeat(markdown.paddingX);
-	const rightMargin = " ".repeat(markdown.paddingX);
-	const expanded = getFileFootnotesExpanded();
-	const rawLines = ["", markdown.theme.linkUrl(buildFootnoteHeaderLine(expanded, items.length))];
-	if (expanded) {
-		for (const item of items) {
-			let line = `${markdown.theme.linkUrl(`[${item.index}] `)}${formatTerminalHyperlink(
-				item.openUrl,
-				markdown.theme.link(markdown.theme.underline(item.displayHref)),
-			)}`;
-			if (item.vscodeUrl) {
-				line += ` ${formatTerminalHyperlink(item.vscodeUrl, markdown.theme.link(markdown.theme.underline("VS Code")))}`;
-			}
-			rawLines.push(line);
-		}
-	}
-	const rendered: string[] = [];
-	for (const rawLine of rawLines) {
-		if (!rawLine) {
-			rendered.push(" ".repeat(width));
-			continue;
-		}
-		const wrapped = wrapTextWithAnsi(rawLine, contentWidth);
-		for (const wrappedLine of wrapped) {
-			const lineWithMargins = leftMargin + wrappedLine + rightMargin;
-			const paddingNeeded = Math.max(0, width - visibleWidth(lineWithMargins));
-			rendered.push(lineWithMargins + " ".repeat(paddingNeeded));
-		}
-	}
-	return rendered;
-};
-
-const patchAssistantMessageRendering = () => {
-	const globalScope = globalThis as Record<PropertyKey, unknown>;
-	if (globalScope[PATCHED]) return;
-	globalScope[PATCHED] = true;
-
-	const originalCreateExtensionUIContext = InteractiveMode.prototype.createExtensionUIContext;
-	InteractiveMode.prototype.createExtensionUIContext = function () {
-		const uiContext = originalCreateExtensionUIContext.call(this) as Record<string, unknown>;
-		uiContext.fullRedraw = () => {
-			this.ui.requestRender(true);
+const getLatestAssistantText = (ctx: { sessionManager: { getBranch: () => SessionEntry[] } }): { text?: string; error?: string } => {
+	for (const entry of ctx.sessionManager.getBranch().toReversed()) {
+		if (entry.type !== "message") continue;
+		const message = entry.message as unknown as Record<string, unknown>;
+		if (message.role !== "assistant") continue;
+		if (message.stopReason !== "stop") return { error: `Last assistant message incomplete (${String(message.stopReason)})` };
+		const content = Array.isArray(message.content) ? message.content : [];
+		return {
+			text: content.flatMap((block) =>
+				typeof block === "object" && block !== null && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string"
+					? [block.text]
+					: [],
+			).join("\n"),
 		};
-		return uiContext;
-	};
-
-	const originalUpdateContent = AssistantMessageComponent.prototype.updateContent;
-	AssistantMessageComponent.prototype.updateContent = function (message: any) {
-		originalUpdateContent.call(this, message);
-		for (const child of this.contentContainer.children) {
-			if (child instanceof Markdown) {
-				(child as MarkdownWithFootnotes)[ASSISTANT_MARKDOWN] = true;
-			}
-		}
-	};
-
-	const originalInvalidate = Markdown.prototype.invalidate;
-	Markdown.prototype.invalidate = function () {
-		delete (this as MarkdownWithFootnotes)[PATCHED_CACHE];
-		return originalInvalidate.call(this);
-	};
-
-	const originalRenderInlineTokens = Markdown.prototype.renderInlineTokens;
-	Markdown.prototype.renderInlineTokens = function (tokens: any[], styleContext?: { applyText: (text: string) => string; stylePrefix: string }) {
-		const markdown = this as MarkdownWithFootnotes;
-		if (!markdown[ASSISTANT_MARKDOWN] || !markdown[FOOTNOTE_STATE]) {
-			return originalRenderInlineTokens.call(this, tokens, styleContext);
-		}
-		let result = "";
-		const resolvedStyleContext = styleContext ?? this.getDefaultInlineStyleContext();
-		const { stylePrefix } = resolvedStyleContext;
-		for (const token of tokens) {
-			if (token.type !== "link" || !isFileHref(token.href)) {
-				result += originalRenderInlineTokens.call(this, [token], resolvedStyleContext);
-				continue;
-			}
-			const hrefForComparison = token.href.startsWith("mailto:") ? token.href.slice(7) : token.href;
-			const linkText = originalRenderInlineTokens.call(this, token.tokens || [], resolvedStyleContext);
-			const visibleLinkText = stripAnsi(linkText).trim();
-			const inlineLabel =
-				token.text === token.href || token.text === hrefForComparison || visibleLinkText.length === 0
-					? deriveInlineLabel(token.href)
-					: linkText;
-			const footnoteItem = registerFootnote(markdown, token.href);
-			const inlineLink = footnoteItem
-				? formatTerminalHyperlink(footnoteItem.openUrl, this.theme.link(this.theme.underline(inlineLabel)))
-				: this.theme.link(this.theme.underline(inlineLabel));
-			result += inlineLink + this.theme.linkUrl(`[${footnoteItem?.index ?? 0}]`) + stylePrefix;
-		}
-		while (stylePrefix && result.endsWith(stylePrefix)) {
-			result = result.slice(0, -stylePrefix.length);
-		}
-		return result;
-	};
-
-	const originalRender = Markdown.prototype.render;
-	Markdown.prototype.render = function (width: number) {
-		const markdown = this as MarkdownWithFootnotes;
-		if (!markdown[ASSISTANT_MARKDOWN] || markdown.defaultTextStyle?.bgColor) {
-			return originalRender.call(this, width);
-		}
-		const expanded = getFileFootnotesExpanded();
-		const cached = markdown[PATCHED_CACHE];
-		if (cached && cached.text === this.text && cached.width === width && cached.expanded === expanded) {
-			return cached.lines;
-		}
-		const previousCachedText = markdown.cachedText;
-		const previousCachedWidth = markdown.cachedWidth;
-		const previousCachedLines = markdown.cachedLines;
-		markdown.cachedText = undefined;
-		markdown.cachedWidth = undefined;
-		markdown.cachedLines = undefined;
-		markdown[FOOTNOTE_STATE] = {
-			items: [],
-			itemByHref: new Map<string, FileFootnoteItem>(),
-		};
-		try {
-			const lines = originalRender.call(this, width) as string[];
-			const items = markdown[FOOTNOTE_STATE]?.items || [];
-			const rendered = items.length > 0 ? [...lines, ...buildFootnoteLines(markdown, width, items)] : lines;
-			markdown[PATCHED_CACHE] = {
-				text: this.text,
-				width,
-				lines: rendered,
-				expanded,
-			};
-			return rendered;
-		} finally {
-			delete markdown[FOOTNOTE_STATE];
-			markdown.cachedText = previousCachedText;
-			markdown.cachedWidth = previousCachedWidth;
-			markdown.cachedLines = previousCachedLines;
-		}
-	};
-};
-
-const getLatestAssistantText = (ctx: { sessionManager: { getBranch: () => any[] } }): { text?: string; error?: string } => {
-	const branch = ctx.sessionManager.getBranch();
-	for (let i = branch.length - 1; i >= 0; i--) {
-		const entry = branch[i];
-		if (entry?.type !== "message") continue;
-		const message = entry.message;
-		if (!message || message.role !== "assistant") continue;
-		if (message.stopReason !== "stop") {
-			return { error: `Last assistant message incomplete (${message.stopReason})` };
-		}
-		const textParts = Array.isArray(message.content)
-			? message.content
-					.filter((content): content is { type: "text"; text: string } => content?.type === "text" && typeof content.text === "string")
-					.map((content) => content.text)
-			: [];
-		return { text: textParts.join("\n") };
 	}
 	return { error: "No assistant messages found" };
 };
 
 const openUriWithSystem = async (pi: ExtensionAPI, uri: string): Promise<void> => {
-	if (process.platform === "darwin") {
-		await pi.exec("open", [uri], { timeout: 5000 });
-		return;
-	}
-	if (process.platform === "win32") {
-		await pi.exec("cmd", ["/c", "start", "", uri], { timeout: 5000 });
-		return;
-	}
-	await pi.exec("xdg-open", [uri], { timeout: 5000 });
+	const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(uri)?.[1]?.toLowerCase();
+	if (scheme !== "file" && scheme !== "vscode") throw new Error(`Refusing to open unsupported URI scheme: ${String(scheme)}`);
+	const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+	const args = process.platform === "win32" ? ["/c", "start", "", uri] : [uri];
+	await pi.exec(command, args, { timeout: 5000 });
 };
 
 const openFootnoteInVsCode = async (pi: ExtensionAPI, item: FileFootnoteItem): Promise<void> => {
@@ -494,74 +286,64 @@ const openFootnoteInVsCode = async (pi: ExtensionAPI, item: FileFootnoteItem): P
 		const result = await pi.exec("code", item.line ? ["--goto", target] : [item.filesystemPath], { timeout: 5000 });
 		if (result.code === 0) return;
 	} catch {
-		// Fall back to URL scheme if the code CLI is unavailable.
+		// The URL scheme keeps the command useful when the optional code CLI is unavailable.
 	}
 	if (!item.vscodeUrl) throw new Error(`No VS Code URL for footnote [${item.index}]`);
 	await openUriWithSystem(pi, item.vscodeUrl);
 };
 
-const openFootnoteNormally = async (pi: ExtensionAPI, item: FileFootnoteItem): Promise<void> => {
-	if (!item.openUrl) throw new Error(`No open URL for footnote [${item.index}]`);
-	await openUriWithSystem(pi, item.openUrl);
-};
-
 export default function fileFootnotesExtension(pi: ExtensionAPI) {
-	setFileFootnotesExpanded(false);
-	patchAssistantMessageRendering();
-	pi.registerShortcut?.(FOOTNOTE_TOGGLE_SHORTCUT, {
-		description: "Collapse or expand file footnotes",
-		handler: (ctx) => {
-			const expanded = toggleFileFootnotesExpanded();
-			ctx.ui.notify(`File footnotes ${expanded ? "expanded" : "collapsed"}`, "info");
-			(ctx.ui as { fullRedraw?: () => void }).fullRedraw?.();
-		},
+	pi.on("message_end", async (event): Promise<{ message: AgentMessage } | undefined> => {
+		if (event.message.role !== "assistant") return undefined;
+		let changed = false;
+		const content = event.message.content.map((block) => {
+			if (block.type !== "text") return block;
+			const text = rewriteFileLinksAsFootnotes(block.text);
+			if (text === block.text) return block;
+			changed = true;
+			return { ...block, text };
+		});
+		return changed ? { message: { ...event.message, content } } : undefined;
 	});
-	pi.registerCommand?.("file-footnotes", {
+
+	pi.registerCommand("file-footnotes", {
 		description: "Open file footnotes from the latest assistant message",
 		handler: async (args, ctx) => {
-			const latestAssistant = getLatestAssistantText(ctx);
-			if (latestAssistant.error) {
-				ctx.ui.notify(latestAssistant.error, latestAssistant.error.includes("incomplete") ? "error" : "warning");
+			const latest = getLatestAssistantText(ctx);
+			if (latest.error) {
+				ctx.ui.notify(latest.error, latest.error.includes("incomplete") ? "error" : "warning");
 				return;
 			}
-
-			const items = extractFileFootnotesFromText(latestAssistant.text ?? "");
+			const items = extractFileFootnotesFromText(latest.text ?? "");
 			if (items.length === 0) {
 				ctx.ui.notify("No file footnotes found in the latest assistant message", "warning");
 				return;
 			}
-
-			const trimmed = args.trim();
-			const openAction = async (mode: "open" | "vscode", index: number) => {
-				const item = items.find((item) => item.index === index);
+			const open = async (mode: "open" | "vscode", index: number) => {
+				const item = items.find((candidate) => candidate.index === index);
 				if (!item) throw new Error(`Unknown footnote index: ${index}`);
 				if (mode === "vscode") await openFootnoteInVsCode(pi, item);
-				else await openFootnoteNormally(pi, item);
+				else if (item.openUrl) await openUriWithSystem(pi, item.openUrl);
+				else throw new Error(`No open URL for footnote [${index}]`);
 				ctx.ui.notify(`Opened footnote [${index}] ${mode === "vscode" ? "in VS Code" : "with the system opener"}`, "info");
 			};
-
 			try {
+				const trimmed = args.trim();
 				if (trimmed) {
 					const match = /^(open|vscode)\s+(\d+)$/.exec(trimmed);
-					if (!match) {
-						ctx.ui.notify("Usage: /file-footnotes [open|vscode] <index>", "warning");
-						return;
-					}
-					await openAction(match[1] as "open" | "vscode", Number(match[2]));
+					if (!match) throw new Error("Usage: /file-footnotes [open|vscode] <index>");
+					await open(match[1] as "open" | "vscode", Number(match[2]));
 					return;
 				}
-
 				const labels = items.map((item) => `[${item.index}] ${item.displayHref}`);
-				const selectedLabel = await ctx.ui.select("Open file footnote", labels);
-				if (!selectedLabel) return;
-				const selectedIndex = labels.indexOf(selectedLabel);
-				if (selectedIndex === -1) return;
+				const selected = await ctx.ui.select("Open file footnote", labels);
+				if (!selected) return;
+				const item = items[labels.indexOf(selected)];
+				if (!item) return;
 				const action = await ctx.ui.select("Open how?", ["Open path", "Open in VS Code"]);
-				if (!action) return;
-				await openAction(action === "Open in VS Code" ? "vscode" : "open", items[selectedIndex]!.index);
+				if (action) await open(action === "Open in VS Code" ? "vscode" : "open", item.index);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : "Failed to open file footnote";
-				ctx.ui.notify(message, "error");
+				ctx.ui.notify(error instanceof Error ? error.message : "Failed to open file footnote", "error");
 			}
 		},
 	});
