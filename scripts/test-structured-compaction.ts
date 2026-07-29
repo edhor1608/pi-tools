@@ -1,3 +1,5 @@
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { runStructuredCompactionBackend } from "../extensions/structured-compaction/backend.ts";
 import { requestCodexRemoteCompaction } from "../extensions/structured-compaction/responses-adapter.ts";
 import type { StructuredCompactionConfig } from "../extensions/structured-compaction/types.ts";
 
@@ -76,6 +78,56 @@ try {
 	assert(!("stream" in body) && !("tools" in body) && !("reasoning" in body), "expected only compact-compatible request fields");
 	assert(result.outputItems[0]?.type === "compaction_summary", "expected raw Codex replacement output to survive");
 	assert(typeof result.usage === "object" && result.usage !== null, "expected remote usage to be persisted");
+
+	const faux = registerFauxProvider({ provider: "faux", models: [{ id: "summary" }] });
+	const summaryUsage = { input: 11, output: 7, cacheRead: 3, cacheWrite: 0, totalTokens: 18, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+	faux.setResponses([{ ...fauxAssistantMessage("Summary"), usage: summaryUsage }]);
+	try {
+		const backendResult = await runStructuredCompactionBackend(
+			{
+				messagesToSummarize: [],
+				turnPrefixMessages: [],
+				readFiles: [],
+				modifiedFiles: [],
+				firstKeptEntryId: "entry-test",
+				isSplitTurn: false,
+				tokensBefore: 120,
+				previousArtifact: {
+					summary: "Previous summary",
+					replacementMessages: [],
+					remoteReplacement: {
+						api: "openai-codex-responses",
+						outputItems: [{ type: "compaction_summary", encrypted_content: "previous" }],
+					},
+				},
+			} as never,
+			{
+				ctx: {
+					model: {
+						provider: "openai-codex",
+						id: "gpt-5.6-sol",
+						api: "openai-codex-responses",
+						baseUrl: "https://chatgpt.com/backend-api",
+						headers: {},
+					},
+					modelRegistry: {
+						find: () => faux.getModel(),
+						async getApiKeyAndHeaders() {
+							return { ok: true, apiKey: "header.payload.signature", headers: { "chatgpt-account-id": "account-test" } };
+						},
+					},
+					getSystemPrompt: () => "system",
+					sessionManager: { getSessionId: () => "session-test" },
+				} as never,
+				config: { ...config, backend: { ...config.backend, model: "faux/summary" } },
+				prompts: { system: "system", compact: "compact" },
+				signal: new AbortController().signal,
+			},
+		);
+		assert(backendResult.usage !== undefined, "expected codex-remote backend to preserve summary usage");
+	} finally {
+		faux.unregister();
+	}
 
 	console.log(JSON.stringify({
 		url: request.url,

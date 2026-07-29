@@ -219,6 +219,7 @@ const codexRemoteBackend: CompactionBackend = {
 			summary: summaryResult.summary,
 			backendModel: `${model.provider}/${model.id}`,
 			remoteReplacement,
+			usage: summaryResult.usage,
 			metadata: {
 				...(summaryResult.metadata || {}),
 				remoteApi: remoteReplacement.api,
