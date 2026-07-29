@@ -7,7 +7,8 @@ Sources used for the current port:
 - installed Pi changelog, declarations, documentation, and examples
 - OpenAI SDK `6.26.0` compact-response declarations bundled with Pi
 - Oxlint compiler diagnostics and managed-extension loading
-- live `openai-codex/gpt-5.6-sol` compact-endpoint canary
+- live `openai-codex/gpt-5.6-sol` compact-endpoint and Pi-subagent canaries
+- live Claude Agent SDK completion and interruption canaries through Claude Code `2.1.220`
 
 ## Package Runtime
 
@@ -15,6 +16,14 @@ Sources used for the current port:
 - supported Pi range is `>=0.82.1 <0.83.0`
 - all extension and test source is covered by Oxlint type-aware rules and TypeScript compiler diagnostics
 - `complete()` currently comes from the temporary `@earendil-works/pi-ai/compat` entrypoint
+
+## Subagents
+
+- Pi children use `createAgentSession()`, normal session files, extension binding in print mode, and the parent `ModelRegistry`
+- Claude children use Claude Agent SDK `0.3.220` with the installed Claude Code executable and existing user authentication
+- Effect `4.0.0-beta.102` scopes manager, stream, cancellation, and teardown lifetimes
+- `/subagents` uses current Pi TUI keybindings and custom-component APIs
+- automatic result delivery is regression-tested with Structured Compaction active
 
 ## Structured Compaction
 
@@ -46,5 +55,7 @@ For a Pi upgrade beyond `0.82.1`, re-check:
 - Codex compact payload and header contracts
 - WebSocket continuation after remote history replacement
 - `message_end` replacement semantics
+- child `AgentSession` lifecycle and extension-binding APIs
+- Claude Agent SDK stream messages, interruption receipts, and thinking-budget options
 
 The highest remaining compatibility risk is the provider-native compaction boundary. It has mocked contract coverage and a live GPT-5.6 Codex canary, but the provider can change independently of Pi.

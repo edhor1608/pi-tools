@@ -1,7 +1,8 @@
 # pi-tools
 
-`pi-tools` is a focused Pi package with three independent extensions:
+`pi-tools` is a focused Pi package with four independent extensions:
 
+- `subagents` runs background Pi and Claude Code agents
 - `file-footnotes` keeps file-heavy assistant answers readable
 - `stash` stores complete prompts for controlled later release
 - `structured-compaction` preserves continuity in long sessions
@@ -28,7 +29,26 @@ A local checkout also works:
 pi install /absolute/path/to/pi-tools
 ```
 
-The three extensions are exposed separately and can be enabled or disabled through `pi config`.
+The four extensions are exposed separately and can be enabled or disabled through `pi config`.
+
+## Subagents
+
+Subagents run autonomously with their own context windows, sessions, and normal host permissions. The `pi` harness runs an in-process Pi SDK session and inherits the parent model and thinking level by default. The `claude` harness uses the local Claude Code executable and its existing authentication; omitted model and reasoning options preserve Claude Code defaults.
+
+The parent model can use:
+
+- `subagent_spawn` to start background work
+- `subagent_check` and `subagent_list` to inspect it without blocking
+- `subagent_wait` when a result is required immediately
+- `subagent_cancel` to abort work while preserving its transcript
+
+Settled results return automatically. `/subagents` opens a compact picker, then a full-screen transcript where a child can be steered or aborted. There is no extension-level concurrency limit, sandbox, or project trust gate. Recursive subagent spawning and user prompts are disabled in children.
+
+Claude requires an authenticated local installation:
+
+```bash
+claude auth status
+```
 
 ## File Footnotes
 
