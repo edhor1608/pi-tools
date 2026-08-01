@@ -1,7 +1,9 @@
+import { realpathSync } from "node:fs";
 import { open, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { setExtensionStatus } from "./shared/status-bus.ts";
 
 const MEMORIES_REPO = join(homedir(), "memories");
 const MEMORY_DIR = join(MEMORIES_REPO, "memory");
@@ -20,6 +22,17 @@ export interface MemoryCommitOptions {
 	basename: string;
 	run?: (command: string, args: string[], cwd: string) => Promise<CommandResult>;
 }
+
+export type MemoryCommitResult = "committed" | "noop" | "failed";
+
+export const createMemorySyncFailurePublisher = (publish: typeof setExtensionStatus = setExtensionStatus) => {
+	let published = false;
+	return (result: MemoryCommitResult): void => {
+		if (result !== "failed" || published) return;
+		published = true;
+		publish("memories-sync", "memory commit failed", { tone: "warn", order: 40 });
+	};
+};
 
 const delay = (milliseconds: number): Promise<void> => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
@@ -42,9 +55,17 @@ const runCommand = async (command: string, args: string[], cwd: string): Promise
 	});
 };
 
+const canonicalPath = (path: string): string => {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+};
+
 export const isMemoryPath = (targetPath: string, cwd: string, memoryDir = MEMORY_DIR): boolean => {
-	const normalizedTarget = resolve(cwd, targetPath.startsWith("@") ? targetPath.slice(1) : targetPath);
-	const pathFromMemory = relative(resolve(memoryDir), normalizedTarget);
+	const resolvedTarget = resolve(cwd, targetPath.startsWith("@") ? targetPath.slice(1) : targetPath);
+	const pathFromMemory = relative(canonicalPath(memoryDir), canonicalPath(resolvedTarget));
 	return pathFromMemory !== "" && !pathFromMemory.startsWith("..") && !isAbsolute(pathFromMemory);
 };
 
@@ -80,33 +101,34 @@ const runGit = async (run: NonNullable<MemoryCommitOptions["run"]>, repoRoot: st
 	return { code: -1, stdout: "", stderr: "" };
 };
 
-export const commitMemoryChanges = async (options: MemoryCommitOptions): Promise<boolean> => {
+export const commitMemoryChanges = async (options: MemoryCommitOptions): Promise<MemoryCommitResult> => {
 	try {
 		const run = options.run ?? runCommand;
 		const gitDirResult = await runGit(run, options.repoRoot, ["rev-parse", "--git-dir"]);
-		if (gitDirResult.code !== 0) return false;
+		if (gitDirResult.code !== 0) return "noop";
 
 		const gitDir = gitDirResult.stdout.trim();
 		const resolvedGitDir = resolve(options.repoRoot, gitDir || ".git");
 		const release = await acquireLock(join(resolvedGitDir, "pi-memories-sync.lock"));
-		if (!release) return false;
+		if (!release) return "failed";
 		try {
-			if ((await runGit(run, options.repoRoot, ["add", "-A", "--", "memory"])).code !== 0) return false;
+			if ((await runGit(run, options.repoRoot, ["add", "-A", "--", "memory"])).code !== 0) return "failed";
 			const staged = await runGit(run, options.repoRoot, ["diff", "--cached", "--quiet", "--", "memory"]);
-			if (staged.code === 0) return false;
-			if (staged.code !== 1) return false;
+			if (staged.code === 0) return "noop";
+			if (staged.code !== 1) return "failed";
 			const committed = await runGit(run, options.repoRoot, ["commit", "-m", `memory: ${options.basename}`, "--", "memory"]);
-			return committed.code === 0;
+			return committed.code === 0 ? "committed" : "failed";
 		} finally {
 			await release();
 		}
 	} catch {
-		return false;
+		return "failed";
 	}
 };
 
 export default function memoriesSyncExtension(pi: ExtensionAPI) {
 	let commitQueue = Promise.resolve();
+	const publishFailure = createMemorySyncFailurePublisher();
 
 	pi.on("tool_result", (event, ctx) => {
 		try {
@@ -115,10 +137,11 @@ export default function memoriesSyncExtension(pi: ExtensionAPI) {
 			if (typeof targetPath !== "string" || !isMemoryPath(targetPath, ctx.cwd)) return;
 			commitQueue = commitQueue
 				.then(async () => {
-					await commitMemoryChanges({
+					const result = await commitMemoryChanges({
 						repoRoot: MEMORIES_REPO,
 						basename: basename(resolve(ctx.cwd, targetPath.startsWith("@") ? targetPath.slice(1) : targetPath)),
 					});
+					publishFailure(result);
 				})
 				.catch(() => undefined);
 		} catch {

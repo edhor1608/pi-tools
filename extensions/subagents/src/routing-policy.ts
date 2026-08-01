@@ -8,6 +8,7 @@ export interface RoutingRequest {
 	readonly inheritedModel?: { readonly provider: string; readonly id: string };
 	readonly bareModelProviders?: ReadonlyArray<string>;
 	readonly allowPaidOpencode?: boolean;
+	readonly nestedSpawn?: boolean;
 }
 
 export type RouteResolution = { readonly backend: BackendName; readonly model: string | undefined } | { readonly error: string };
@@ -23,11 +24,39 @@ function claudeModel(model: string) {
 }
 
 function isProviderQualified(model: string, provider: string) {
-	return model.slice(0, model.indexOf("/")).toLowerCase() === provider;
+	const slash = model.indexOf("/");
+	return slash > 0 && model.slice(0, slash).toLowerCase() === provider.toLowerCase();
 }
 
-const paidOpenCodeError = (model: string) =>
-	`OpenCode model "${model}" is paid and requires explicit opt-in: use a provider-qualified "opencode/..." model and set allowPaidOpencode: true.`;
+function paidOpenCodeError(model: string, nestedSpawn = false) {
+	const qualifiedModel = isProviderQualified(model, "opencode") ? model : `opencode/${model}`;
+	return nestedSpawn
+		? `OpenCode model "${qualifiedModel}" is paid and unavailable for nested subagent spawns by policy.`
+		: `OpenCode model "${qualifiedModel}" is paid and requires an explicit provider-qualified model: request "${qualifiedModel}" and set allowPaidOpencode: true.`;
+}
+
+function resolveBareModel(request: RoutingRequest, model: string): RouteResolution | undefined {
+	if (request.bareModelProviders) {
+		const providers = [...new Set(request.bareModelProviders)];
+		const openCodeProviders = providers.filter((provider) => provider.toLowerCase() === "opencode");
+		if (openCodeProviders.length === 0) return undefined;
+
+		const nativeProviders = providers.filter((provider) => provider.toLowerCase() !== "opencode");
+		const inheritedNative = nativeProviders.find((provider) => provider.toLowerCase() === request.inheritedModel?.provider.toLowerCase());
+		const nativeProvider = inheritedNative ?? (nativeProviders.length === 1 ? nativeProviders[0] : undefined);
+		if (nativeProvider) return { backend: "pi", model: `${nativeProvider}/${model}` };
+		if (nativeProviders.length > 1) {
+			return {
+				error: `Model "${model}" is available from multiple native providers (${nativeProviders.join(", ")}). Use a provider-qualified model id.`,
+			};
+		}
+		return { error: paidOpenCodeError(model, request.nestedSpawn) };
+	}
+
+	return request.inheritedModel?.provider.toLowerCase() === "opencode"
+		? { error: paidOpenCodeError(model, request.nestedSpawn) }
+		: undefined;
+}
 
 export function resolveRoute(request: RoutingRequest): RouteResolution {
 	if (request.model) {
@@ -40,14 +69,12 @@ export function resolveRoute(request: RoutingRequest): RouteResolution {
 		}
 
 		if (isProviderQualified(request.model, "opencode")) {
+			if (request.nestedSpawn) return { error: paidOpenCodeError(request.model, true) };
 			return request.allowPaidOpencode ? { backend: "pi", model: request.model } : { error: paidOpenCodeError(request.model) };
 		}
-		if (
-			!request.model.includes("/") &&
-			(request.inheritedModel?.provider.toLowerCase() === "opencode" ||
-				request.bareModelProviders?.some((provider) => provider.toLowerCase() === "opencode"))
-		) {
-			return { error: paidOpenCodeError(request.model) };
+		if (!request.model.includes("/")) {
+			const bareRoute = resolveBareModel(request, request.model);
+			if (bareRoute) return bareRoute;
 		}
 		return { backend: "pi", model: request.model };
 	}
@@ -57,10 +84,7 @@ export function resolveRoute(request: RoutingRequest): RouteResolution {
 		const claude = claudeModel(request.inheritedModel.id);
 		if (claude) return { backend: "claude", model: claude };
 		if (request.inheritedModel.provider.toLowerCase() === "opencode") {
-			return {
-				error:
-					'OpenCode models are paid and cannot be inherited implicitly. Request an explicit provider-qualified model ("opencode/...") and set allowPaidOpencode: true.',
-			};
+			return { error: paidOpenCodeError(request.inheritedModel.id, request.nestedSpawn) };
 		}
 	}
 	return { backend: "pi", model: undefined };

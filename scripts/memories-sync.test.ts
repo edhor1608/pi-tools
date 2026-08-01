@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { commitMemoryChanges, isMemoryPath } from "../extensions/memories-sync.ts";
+import { commitMemoryChanges, createMemorySyncFailurePublisher, isMemoryPath } from "../extensions/memories-sync.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,12 +14,21 @@ const git = async (repo: string, ...args: string[]): Promise<string> => {
 	return result.stdout.trim();
 };
 
-void test("path matching accepts only descendants of the memory directory", () => {
-	const repo = "/tmp/memories";
+void test("path matching accepts canonical and symlinked descendants only", async (context) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-memory-path-"));
+	context.after(async () => rm(root, { recursive: true, force: true }));
+	const repo = join(root, "memories");
 	const memory = join(repo, "memory");
+	const note = join(memory, "project", "note.md");
+	const alias = join(root, "memories-alias");
+	await mkdir(join(memory, "project"), { recursive: true });
+	await writeFile(note, "note\n");
+	await symlink(repo, alias);
+
 	assert.equal(isMemoryPath("memory/project/note.md", repo, memory), true);
 	assert.equal(isMemoryPath("@memory/project/note.md", repo, memory), true);
-	assert.equal(isMemoryPath(join(memory, "project", "note.md"), "/tmp", memory), true);
+	assert.equal(isMemoryPath(note, root, memory), true);
+	assert.equal(isMemoryPath(join(alias, "memory", "project", "note.md"), root, memory), true);
 	assert.equal(isMemoryPath("memory", repo, memory), false);
 	assert.equal(isMemoryPath("memory/../tool-failures.jsonl", repo, memory), false);
 	assert.equal(isMemoryPath("memory-other/note.md", repo, memory), false);
@@ -42,15 +51,47 @@ void test("memory commits are path-scoped and skip unchanged repositories", asyn
 	await writeFile(join(repo, "outside.txt"), "staged but unrelated\n");
 	await git(repo, "add", "outside.txt");
 
-	assert.equal(await commitMemoryChanges({ repoRoot: repo, basename: "note.md" }), true);
+	assert.equal(await commitMemoryChanges({ repoRoot: repo, basename: "note.md" }), "committed");
 	assert.equal(await git(repo, "log", "-1", "--pretty=%s"), "memory: note.md");
 	assert.equal(await git(repo, "show", "--pretty=", "--name-only", "HEAD"), "memory/project/note.md");
 	assert.equal(await git(repo, "diff", "--cached", "--name-only"), "outside.txt");
-	assert.equal(await commitMemoryChanges({ repoRoot: repo, basename: "note.md" }), false);
+	assert.equal(await commitMemoryChanges({ repoRoot: repo, basename: "note.md" }), "noop");
+});
+
+void test("persistent index lock contention is reported after three attempts", async (context) => {
+	const repo = await mkdtemp(join(tmpdir(), "pi-memories-locked-"));
+	context.after(async () => rm(repo, { recursive: true, force: true }));
+	await mkdir(join(repo, ".git"));
+	let addAttempts = 0;
+
+	const result = await commitMemoryChanges({
+		repoRoot: repo,
+		basename: "note.md",
+		run: async (_command, args) => {
+			if (args[0] === "rev-parse") return { code: 0, stdout: ".git\n", stderr: "" };
+			addAttempts += 1;
+			return { code: 128, stdout: "", stderr: "fatal: Unable to create .git/index.lock" };
+		},
+	});
+
+	assert.equal(result, "failed");
+	assert.equal(addAttempts, 3);
+});
+
+void test("commit failures publish one warning", () => {
+	const statuses: Array<{ id: string; text: string; tone?: string }> = [];
+	const publishFailure = createMemorySyncFailurePublisher((id, text, options) => {
+		statuses.push({ id, text, tone: options?.tone });
+	});
+
+	publishFailure("noop");
+	publishFailure("failed");
+	publishFailure("failed");
+	assert.deepEqual(statuses, [{ id: "memories-sync", text: "memory commit failed", tone: "warn" }]);
 });
 
 void test("non-git memory roots are ignored", async (context) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-memories-not-git-"));
 	context.after(async () => rm(directory, { recursive: true, force: true }));
-	assert.equal(await commitMemoryChanges({ repoRoot: directory, basename: "note.md" }), false);
+	assert.equal(await commitMemoryChanges({ repoRoot: directory, basename: "note.md" }), "noop");
 });

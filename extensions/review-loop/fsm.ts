@@ -20,6 +20,12 @@
  *   OpenCode or any other provider.
  * - The mode never merges or lands work. No effect in this machine can
  *   express a git push/merge, by construction.
+ *
+ * Async-epoch isolation: `epoch` increments on every arm/off cycle and every
+ * async operation gets a fresh `opId` from the monotonic `opSeq`. Completion
+ * and failure events must carry the matching (epoch, opId) pair or they are
+ * ignored — a reviewer or verifier from a previous on/off cycle can never
+ * complete, fail, or block a newer loop.
  */
 
 export const PHASES = [
@@ -44,6 +50,21 @@ export type HardStopReason = (typeof HARD_STOP_REASONS)[number];
 
 export type Actor = "user" | "agent";
 
+export const OP_KINDS = ["review", "fix", "verify"] as const;
+export type OpKind = (typeof OP_KINDS)[number];
+
+export interface ActiveOp {
+	id: number;
+	kind: OpKind;
+}
+
+/**
+ * Who produced the reviewed work and therefore owns the fix batch (ADR:
+ * "same-worker fix lineage"). Root-authored work is fixed by the root
+ * session; work produced by a tracked subagent is fixed by that subagent.
+ */
+export type FixOwner = { kind: "root" } | { kind: "subagent"; id: string };
+
 export interface Finding {
 	id: string;
 	title: string;
@@ -51,9 +72,9 @@ export interface Finding {
 	detail?: string;
 }
 
-/** Result of one reviewer run, already parsed by the reviewer module. */
+/** Result of one reviewer run, already parsed by the review contract. */
 export interface ReviewOutcome {
-	/** False when the review was empty, garbled, or the reviewer crashed. */
+	/** False when the review was empty, garbled, or verdict/findings disagree. */
 	valid: boolean;
 	/** The fingerprint the reviewer claims to have reviewed. */
 	fingerprint: string;
@@ -71,51 +92,71 @@ export interface ReviewerInfo {
 export interface ReviewLoopState {
 	phase: Phase;
 	enabledBy?: Actor;
+	/** Bumped on every arm/off cycle; stale-event isolation (with opId). */
+	epoch: number;
+	/** Monotonic dispatch counter; NEVER reset while the extension lives. */
+	opSeq: number;
+	/** The single in-flight async operation. Non-durable: cleared on restore. */
+	activeOp?: ActiveOp;
+	/** Owner of the reviewed work; the fix batch is routed to this lineage. */
+	owner: FixOwner;
 	/** Current review round, 1-based. 0 while no round has started. */
 	round: number;
 	/** Invalid-review retries consumed within the current round. */
 	invalidRetries: number;
 	/** Failed verify->fix retries consumed for the current finding batch. */
 	fixAttempts: number;
-	/** Stable git fingerprint the current round reviews (HEAD + worktree diff hash). */
+	/** Stable git fingerprint the current round reviews (HEAD + tree hash). */
 	fingerprint?: string;
 	/** True while a reviewer run is in flight. Non-durable: restored as false. */
 	reviewInFlight: boolean;
 	reviewer?: ReviewerInfo;
 	/** Findings of the last completed review (accepted subset once triaged). */
 	findings: Finding[];
-	/** Normalized keys of accepted critical/major findings, one array per round. */
+	/** Severity-independent keys of accepted critical/major findings, per round. */
 	majorFindingHistory: string[][];
 	blockedReason?: string;
 	hardStopReason?: HardStopReason;
 }
 
 export type ReviewLoopEvent =
-	| { type: "mode-on"; by: Actor }
+	| { type: "mode-on"; by: Actor; owner?: FixOwner }
 	| { type: "mode-off"; by: Actor }
 	/** Work maybe settled: `stable` means two consecutive fingerprints agreed. */
-	| { type: "work-settled"; fingerprint: string; stable: boolean; forced?: boolean }
+	| { type: "work-settled"; epoch: number; fingerprint: string; stable: boolean; forced?: boolean }
 	| {
 			type: "review-completed";
+			epoch: number;
+			opId: number;
 			outcome: ReviewOutcome;
 			/** Fingerprint of the tree at the moment the review returned. */
 			currentFingerprint: string;
 			reviewer?: ReviewerInfo;
 	  }
 	| { type: "findings-accepted"; accepted: Finding[] }
-	| { type: "fix-completed" }
-	| { type: "verify-passed"; fingerprint: string }
-	| { type: "verify-failed"; reason?: string }
-	| { type: "backend-failure"; reason: string }
-	| { type: "round-limit" };
+	| { type: "fix-completed"; epoch: number; opId: number }
+	| { type: "verify-passed"; epoch: number; opId: number; fingerprint: string }
+	| { type: "verify-failed"; epoch: number; opId: number; reason?: string }
+	/** opId omitted for failures outside an op (e.g. fingerprint computation). */
+	| { type: "backend-failure"; epoch: number; opId?: number; reason: string }
+	| { type: "round-limit" }
+	/** Session resume/tree switch: reconcile restored state into pending actions. */
+	| { type: "resumed" };
 
 export type ReviewLoopEffect =
 	/** Run the entry gate now (compute fingerprint stability, then send work-settled). */
-	| { type: "check-gate" }
-	| { type: "dispatch-review"; fingerprint: string; round: number; kind: "initial" | "retry" | "re-review" }
+	| { type: "check-gate"; epoch: number }
+	| {
+			type: "dispatch-review";
+			epoch: number;
+			opId: number;
+			fingerprint: string;
+			round: number;
+			kind: "initial" | "retry" | "re-review";
+	  }
 	| { type: "dispatch-triage"; findings: Finding[] }
-	| { type: "dispatch-fix"; findings: Finding[]; round: number }
-	| { type: "dispatch-verify"; reviewedFingerprint: string };
+	| { type: "dispatch-fix"; epoch: number; opId: number; findings: Finding[]; round: number; owner: FixOwner }
+	| { type: "dispatch-verify"; epoch: number; opId: number; reviewedFingerprint: string };
 
 export interface ReviewLoopConfig {
 	/** Hard stop after this many review rounds. */
@@ -140,6 +181,9 @@ export interface TransitionResult {
 export function initialState(): ReviewLoopState {
 	return {
 		phase: "idle",
+		epoch: 0,
+		opSeq: 0,
+		owner: { kind: "root" },
 		round: 0,
 		invalidRetries: 0,
 		fixAttempts: 0,
@@ -152,15 +196,21 @@ export function initialState(): ReviewLoopState {
 export function cloneState(state: ReviewLoopState): ReviewLoopState {
 	return {
 		...state,
+		activeOp: state.activeOp ? { ...state.activeOp } : undefined,
+		owner: { ...state.owner },
 		reviewer: state.reviewer ? { ...state.reviewer } : undefined,
 		findings: state.findings.map((finding) => ({ ...finding })),
 		majorFindingHistory: state.majorFindingHistory.map((round) => [...round]),
 	};
 }
 
-/** Normalized identity of a finding across rounds (repeated-major detection). */
+/**
+ * Normalized identity of a finding across rounds (repeated-major detection).
+ * Deliberately severity-INDEPENDENT: a reviewer reclassifying the same issue
+ * from major to critical must still trip the root-cause hard stop.
+ */
 export function findingKey(finding: Finding): string {
-	return `${finding.severity}:${finding.title.trim().toLowerCase().replace(/\s+/g, " ")}`;
+	return finding.title.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 const ACTIVE_PHASES: readonly Phase[] = ["reviewing", "triage", "fixing", "verifying", "re-reviewing"];
@@ -171,10 +221,23 @@ export function isModeOn(state: ReviewLoopState): boolean {
 
 const noChange = (state: ReviewLoopState): TransitionResult => ({ state, effects: [] });
 
+/** Stale-async guard: the event must belong to the current epoch and op. */
+const matchesOp = (state: ReviewLoopState, event: { epoch: number; opId: number }, kind: OpKind): boolean =>
+	event.epoch === state.epoch && state.activeOp?.kind === kind && state.activeOp.id === event.opId;
+
+/** Allocate the next op id on a draft state. */
+function beginOp(draft: ReviewLoopState, kind: OpKind): number {
+	draft.opSeq += 1;
+	draft.activeOp = { id: draft.opSeq, kind };
+	return draft.opSeq;
+}
+
 function armed(state: ReviewLoopState): ReviewLoopState {
 	return {
 		...cloneState(state),
 		phase: "armed",
+		epoch: state.epoch + 1,
+		activeOp: undefined,
 		round: 0,
 		invalidRetries: 0,
 		fixAttempts: 0,
@@ -201,13 +264,16 @@ function startRound(state: ReviewLoopState, fingerprint: string, kind: "initial"
 		next.majorFindingHistory = [];
 		next.fixAttempts = 0;
 	}
+	const opId = beginOp(next, "review");
 	return {
 		state: next,
-		effects: [{ type: "dispatch-review", fingerprint, round: next.round, kind }],
+		effects: [{ type: "dispatch-review", epoch: next.epoch, opId, fingerprint, round: next.round, kind }],
 	};
 }
 
 function handleWorkSettled(state: ReviewLoopState, event: Extract<ReviewLoopEvent, { type: "work-settled" }>): TransitionResult {
+	// A gate check from a previous on/off cycle must not steer this one.
+	if (event.epoch !== state.epoch) return noChange(state);
 	if (!event.stable) return noChange(state);
 	switch (state.phase) {
 		case "armed":
@@ -224,11 +290,14 @@ function handleWorkSettled(state: ReviewLoopState, event: Extract<ReviewLoopEven
 			const next = cloneState(state);
 			next.fingerprint = event.fingerprint;
 			next.reviewInFlight = true;
+			const opId = beginOp(next, "review");
 			return {
 				state: next,
 				effects: [
 					{
 						type: "dispatch-review",
+						epoch: next.epoch,
+						opId,
 						fingerprint: event.fingerprint,
 						round: next.round,
 						kind: state.phase === "reviewing" ? "initial" : "re-review",
@@ -250,11 +319,11 @@ function handleReviewCompleted(
 	event: Extract<ReviewLoopEvent, { type: "review-completed" }>,
 	config: ReviewLoopConfig,
 ): TransitionResult {
-	if ((state.phase !== "reviewing" && state.phase !== "re-reviewing") || !state.reviewInFlight) {
-		return noChange(state);
-	}
+	if (state.phase !== "reviewing" && state.phase !== "re-reviewing") return noChange(state);
+	if (!state.reviewInFlight || !matchesOp(state, event, "review")) return noChange(state);
 	const next = cloneState(state);
 	next.reviewInFlight = false;
+	next.activeOp = undefined;
 	if (event.reviewer) next.reviewer = event.reviewer;
 
 	// Fingerprint mismatch: the target moved (or the reviewer reviewed the
@@ -263,7 +332,7 @@ function handleReviewCompleted(
 	const mismatch = event.outcome.fingerprint !== state.fingerprint || event.currentFingerprint !== state.fingerprint;
 	if (mismatch) {
 		next.fingerprint = undefined;
-		return { state: next, effects: [{ type: "check-gate" }] };
+		return { state: next, effects: [{ type: "check-gate", epoch: next.epoch }] };
 	}
 
 	// Invalid review: bounded retry, never a pass.
@@ -275,9 +344,12 @@ function handleReviewCompleted(
 			return { state: next, effects: [] };
 		}
 		next.reviewInFlight = true;
+		const opId = beginOp(next, "review");
 		return {
 			state: next,
-			effects: [{ type: "dispatch-review", fingerprint: state.fingerprint ?? "", round: next.round, kind: "retry" }],
+			effects: [
+				{ type: "dispatch-review", epoch: next.epoch, opId, fingerprint: state.fingerprint ?? "", round: next.round, kind: "retry" },
+			],
 		};
 	}
 
@@ -304,7 +376,8 @@ function handleFindingsAccepted(state: ReviewLoopState, event: Extract<ReviewLoo
 	next.findings = event.accepted.map((finding) => ({ ...finding }));
 
 	// Repeated major findings across rounds mean polishing will not converge:
-	// stop for root-cause/design work instead of looping.
+	// stop for root-cause/design work instead of looping. Keys are
+	// severity-independent so reclassification cannot defeat the stop.
 	const majorKeys = next.findings.filter((finding) => finding.severity === "critical" || finding.severity === "major").map(findingKey);
 	const seenBefore = new Set(state.majorFindingHistory.flat());
 	if (majorKeys.some((key) => seenBefore.has(key))) {
@@ -316,7 +389,11 @@ function handleFindingsAccepted(state: ReviewLoopState, event: Extract<ReviewLoo
 
 	// A valid accepted finding ALWAYS causes a fix. Mandatory, not optional.
 	next.phase = "fixing";
-	return { state: next, effects: [{ type: "dispatch-fix", findings: next.findings, round: next.round }] };
+	const opId = beginOp(next, "fix");
+	return {
+		state: next,
+		effects: [{ type: "dispatch-fix", epoch: next.epoch, opId, findings: next.findings, round: next.round, owner: next.owner }],
+	};
 }
 
 function handleVerify(
@@ -324,8 +401,9 @@ function handleVerify(
 	event: Extract<ReviewLoopEvent, { type: "verify-passed" } | { type: "verify-failed" }>,
 	config: ReviewLoopConfig,
 ): TransitionResult {
-	if (state.phase !== "verifying") return noChange(state);
+	if (state.phase !== "verifying" || !matchesOp(state, event, "verify")) return noChange(state);
 	const next = cloneState(state);
+	next.activeOp = undefined;
 	if (event.type === "verify-failed") {
 		next.fixAttempts += 1;
 		if (next.fixAttempts > config.maxFixAttempts) {
@@ -334,7 +412,11 @@ function handleVerify(
 			return { state: next, effects: [] };
 		}
 		next.phase = "fixing";
-		return { state: next, effects: [{ type: "dispatch-fix", findings: next.findings, round: next.round }] };
+		const opId = beginOp(next, "fix");
+		return {
+			state: next,
+			effects: [{ type: "dispatch-fix", epoch: next.epoch, opId, findings: next.findings, round: next.round, owner: next.owner }],
+		};
 	}
 	// Verified fix -> a fresh re-review is MANDATORY, unless the round limit
 	// hard-stops the loop first.
@@ -350,7 +432,42 @@ function handleVerify(
 	// The fix changed the tree: the old fingerprint is dead. The gate must
 	// observe a NEW stable fingerprint before the re-review dispatches.
 	next.fingerprint = undefined;
-	return { state: next, effects: [{ type: "check-gate" }] };
+	return { state: next, effects: [{ type: "check-gate", epoch: next.epoch }] };
+}
+
+/**
+ * Reconcile a restored session into durable pending actions. In-flight ops
+ * were lost with the process; every active phase re-triggers its own work.
+ */
+function handleResumed(state: ReviewLoopState): TransitionResult {
+	switch (state.phase) {
+		case "armed":
+			return { state, effects: [{ type: "check-gate", epoch: state.epoch }] };
+		case "reviewing":
+		case "re-reviewing":
+			// Restore guarantees reviewInFlight=false: the gate re-dispatches.
+			return { state, effects: [{ type: "check-gate", epoch: state.epoch }] };
+		case "triage":
+			return { state, effects: [{ type: "dispatch-triage", findings: state.findings.map((finding) => ({ ...finding })) }] };
+		case "fixing": {
+			const next = cloneState(state);
+			const opId = beginOp(next, "fix");
+			return {
+				state: next,
+				effects: [{ type: "dispatch-fix", epoch: next.epoch, opId, findings: next.findings, round: next.round, owner: next.owner }],
+			};
+		}
+		case "verifying": {
+			const next = cloneState(state);
+			const opId = beginOp(next, "verify");
+			return {
+				state: next,
+				effects: [{ type: "dispatch-verify", epoch: next.epoch, opId, reviewedFingerprint: next.fingerprint ?? "" }],
+			};
+		}
+		default:
+			return noChange(state);
+	}
 }
 
 export function transition(state: ReviewLoopState, event: ReviewLoopEvent, config: ReviewLoopConfig = DEFAULT_CONFIG): TransitionResult {
@@ -361,10 +478,16 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 			}
 			const next = armed(state);
 			next.enabledBy = event.by;
-			return { state: next, effects: [{ type: "check-gate" }] };
+			next.owner = event.owner ? { ...event.owner } : { kind: "root" };
+			return { state: next, effects: [{ type: "check-gate", epoch: next.epoch }] };
 		}
 		case "mode-off":
-			return { state: initialState(), effects: [] };
+			// Preserve epoch monotonicity so async work from this cycle can
+			// never match a later cycle; preserve opSeq for the same reason.
+			return {
+				state: { ...initialState(), epoch: state.epoch + 1, opSeq: state.opSeq },
+				effects: [],
+			};
 		case "work-settled":
 			return handleWorkSettled(state, event);
 		case "review-completed":
@@ -372,12 +495,13 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 		case "findings-accepted":
 			return handleFindingsAccepted(state, event);
 		case "fix-completed": {
-			if (state.phase !== "fixing") return noChange(state);
+			if (state.phase !== "fixing" || !matchesOp(state, event, "fix")) return noChange(state);
 			const next = cloneState(state);
 			next.phase = "verifying";
+			const opId = beginOp(next, "verify");
 			return {
 				state: next,
-				effects: [{ type: "dispatch-verify", reviewedFingerprint: state.fingerprint ?? "" }],
+				effects: [{ type: "dispatch-verify", epoch: next.epoch, opId, reviewedFingerprint: state.fingerprint ?? "" }],
 			};
 		}
 		case "verify-passed":
@@ -385,9 +509,13 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 			return handleVerify(state, event, config);
 		case "backend-failure": {
 			if (!ACTIVE_PHASES.includes(state.phase) && state.phase !== "armed") return noChange(state);
+			// Stale failures from an earlier cycle/op must not block this loop.
+			if (event.epoch !== state.epoch) return noChange(state);
+			if (event.opId !== undefined && state.activeOp?.id !== event.opId) return noChange(state);
 			const next = cloneState(state);
 			next.phase = "blocked";
 			next.reviewInFlight = false;
+			next.activeOp = undefined;
 			next.blockedReason = event.reason;
 			return { state: next, effects: [] };
 		}
@@ -397,7 +525,10 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 			next.phase = "hard-stop";
 			next.hardStopReason = "round-limit";
 			next.reviewInFlight = false;
+			next.activeOp = undefined;
 			return { state: next, effects: [] };
 		}
+		case "resumed":
+			return handleResumed(state);
 	}
 }

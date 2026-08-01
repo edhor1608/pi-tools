@@ -11,7 +11,7 @@
  * must be persisted by the owning extension itself, not here.
  */
 
-export type StatusTone = "info" | "warn" | "error";
+type StatusTone = "info" | "warn" | "error";
 
 export type ExtensionStatus = {
 	/** Stable identifier, e.g. "review-loop", "usage-guard". One slot per id. */
@@ -26,11 +26,28 @@ export type ExtensionStatus = {
 
 type Listener = () => void;
 
-const statuses = new Map<string, ExtensionStatus>();
-const listeners = new Set<Listener>();
+/**
+ * Pi loads every extension through its own jiti instance with module caching
+ * disabled, so a plain module-level Map would give each extension a private
+ * copy and publishes would never reach the statusline compositor. Anchoring
+ * the registry on globalThis under a well-known symbol makes all extension
+ * module instances of one Pi process share the same state.
+ */
+type BusState = {
+	statuses: Map<string, ExtensionStatus>;
+	listeners: Set<Listener>;
+};
+
+const BUS_KEY = Symbol.for("pi-tools.status-bus.v1");
+
+function busState(): BusState {
+	const host = globalThis as { [BUS_KEY]?: BusState };
+	host[BUS_KEY] ??= { statuses: new Map(), listeners: new Set() };
+	return host[BUS_KEY];
+}
 
 function emit(): void {
-	for (const listener of listeners) {
+	for (const listener of busState().listeners) {
 		try {
 			listener();
 		} catch {
@@ -40,7 +57,7 @@ function emit(): void {
 }
 
 export function setExtensionStatus(id: string, text: string, options?: { tone?: StatusTone; order?: number }): void {
-	statuses.set(id, {
+	busState().statuses.set(id, {
 		id,
 		text,
 		tone: options?.tone ?? "info",
@@ -51,22 +68,23 @@ export function setExtensionStatus(id: string, text: string, options?: { tone?: 
 }
 
 export function clearExtensionStatus(id: string): void {
-	if (statuses.delete(id)) emit();
+	if (busState().statuses.delete(id)) emit();
 }
 
 /** Snapshot ordered by `order`, then id for stable rendering. */
 export function getExtensionStatuses(): ExtensionStatus[] {
-	return [...statuses.values()].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+	return [...busState().statuses.values()].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
 /** Subscribe to changes; returns an unsubscribe function. */
 export function onStatusChange(listener: Listener): () => void {
+	const { listeners } = busState();
 	listeners.add(listener);
 	return () => listeners.delete(listener);
 }
 
 /** Test helper: reset all bus state. */
 export function resetStatusBusForTest(): void {
-	statuses.clear();
-	listeners.clear();
+	busState().statuses.clear();
+	busState().listeners.clear();
 }

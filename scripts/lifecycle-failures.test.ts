@@ -32,17 +32,25 @@ void test("likely secrets are redacted", () => {
 		"AKIAABCDEFGHIJKLMNOP",
 		"password=hunter2",
 		Buffer.from("a".repeat(80)).toString("base64"),
+		"ghp_abcdefghijklmnopqrstuvwxyz123456",
+		"github_pat_11_abcdefghijklmnopqrstuvwxyz123456",
+		"xoxb-1234567890-abcdefghij",
+		"eyJhbGciOiJIUzI1NiJ9.e30.fake_signature",
 	];
 	const redacted = redactSecrets(secrets.join(" | "));
 
 	assert.equal(redacted, Array(secrets.length).fill("[redacted]").join(" | "));
 });
 
-void test("aborts and user interruptions are skipped", () => {
+void test("only genuine abort shapes are skipped", () => {
 	assert.equal(isAbortedFailure("Operation aborted"), true);
-	assert.equal(isAbortedFailure("Command interrupted by user"), true);
+	assert.equal(isAbortedFailure("output before abort\n\nCommand interrupted by user"), true);
 	assert.equal(isAbortedFailure("request canceled"), true);
+	assert.equal(isAbortedFailure("aborted"), true);
 	assert.equal(isAbortedFailure("permission denied"), false);
+	assert.equal(isAbortedFailure("InterruptedException: worker failed"), false);
+	assert.equal(isAbortedFailure("Build interrupted while reading a corrupted stream"), false);
+	assert.equal(isAbortedFailure("request canceled by upstream service"), false);
 
 	const controller = new AbortController();
 	controller.abort();

@@ -578,6 +578,7 @@ const makeManager = Effect.gen(function* () {
 				inheritedModel: requestedTask.parent.inheritedModel,
 				bareModelProviders,
 				allowPaidOpencode: options?.allowPaidOpencode,
+				nestedSpawn: parentId !== undefined,
 			});
 			if ("error" in route) return yield* new SpawnError({ message: route.error });
 			const backendName = route.backend;

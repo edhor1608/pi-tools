@@ -8,7 +8,18 @@ const MAX_INPUT_LENGTH = 300;
 const MAX_ERROR_LENGTH = 500;
 const MAX_RECORD_BYTES = 4096;
 const FAILURE_LOG = join(homedir(), "memories", "tool-failures.jsonl");
-let primaryInstanceClaimed = false;
+
+// Pi creates a cache-disabled jiti instance for each extension runtime, including
+// in-process subagents. A process-wide claim prevents every child copy from also
+// acting as the main-session logger and writing into the same shared JSONL file.
+type PrimaryInstanceState = { owner?: symbol };
+const PRIMARY_INSTANCE_KEY = Symbol.for("pi-tools.lifecycle-failures.primary.v1");
+
+const primaryInstanceState = (): PrimaryInstanceState => {
+	const host = globalThis as { [PRIMARY_INSTANCE_KEY]?: PrimaryInstanceState };
+	host[PRIMARY_INSTANCE_KEY] ??= {};
+	return host[PRIMARY_INSTANCE_KEY];
+};
 
 export interface FailureRecord {
 	ts: string;
@@ -45,6 +56,10 @@ export const redactSecrets = (value: string): string =>
 		.replace(/sk-[A-Za-z0-9]{10,}/g, "[redacted]")
 		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]{10,}/gi, "[redacted]")
 		.replace(/AKIA[A-Z0-9]{16}/g, "[redacted]")
+		.replace(/github_pat_[A-Za-z0-9_]{20,}/g, "[redacted]")
+		.replace(/gh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]")
+		.replace(/xox[a-z]-[A-Za-z0-9-]{10,}/g, "[redacted]")
+		.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted]")
 		.replace(/\bpassword\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,;&]+)/gi, "[redacted]")
 		.replace(/(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/=])/g, "[redacted]");
 
@@ -59,8 +74,10 @@ export const createFailureRecord = (input: FailureRecordInput): FailureRecord =>
 
 export const isAbortedFailure = (error: unknown, signal?: AbortSignal): boolean => {
 	if (signal?.aborted) return true;
-	const text = stringify(error).toLowerCase();
-	return /\b(?:operation|command|request|tool call)?\s*(?:was\s+)?(?:aborted|cancelled|canceled|interrupted)\b/.test(text);
+	const finalLine = stringify(error).trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+	return /^(?:error:\s*)?(?:(?:operation|command|request|tool call)(?: was)?\s+)?(?:aborted|cancelled|canceled|interrupted)(?: by (?:the )?user)?[.!]?$/i.test(
+		finalLine,
+	);
 };
 
 export const serializeFailureRecord = (record: FailureRecord): string | undefined => {
@@ -93,8 +110,10 @@ const toolError = (event: ToolResultEvent): string => textContent(event.content)
 const assistantFailure = (message: AssistantMessage): string => message.errorMessage || textContent(message.content) || "Assistant error";
 
 export default function lifecycleFailuresExtension(pi: ExtensionAPI) {
-	const isPrimaryInstance = !primaryInstanceClaimed;
-	if (isPrimaryInstance) primaryInstanceClaimed = true;
+	const instanceToken = Symbol("lifecycle-failures-instance");
+	const primaryState = primaryInstanceState();
+	const isPrimaryInstance = primaryState.owner === undefined;
+	if (isPrimaryInstance) primaryState.owner = instanceToken;
 	let writeQueue = Promise.resolve();
 
 	const log = (record: FailureRecord): void => {
@@ -151,6 +170,6 @@ export default function lifecycleFailuresExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
-		if (isPrimaryInstance) primaryInstanceClaimed = false;
+		if (primaryState.owner === instanceToken) primaryState.owner = undefined;
 	});
 }

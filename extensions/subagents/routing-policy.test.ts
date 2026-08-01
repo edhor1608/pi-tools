@@ -45,6 +45,39 @@ await test("paid OpenCode models require a provider-qualified id and explicit op
 	assert.match(inherited.error, /explicit provider-qualified model/);
 });
 
+await test("bare model ids prefer an available native provider over OpenCode", () => {
+	assert.deepEqual(
+		resolveRoute({
+			harness: "pi",
+			model: "gpt-5.4",
+			inheritedModel: { provider: "opencode", id: "gpt-5.4" },
+			bareModelProviders: ["opencode", "openai-codex"],
+		}),
+		{ backend: "pi", model: "openai-codex/gpt-5.4" },
+	);
+
+	const onlyOpenCode = resolveRoute({
+		harness: "pi",
+		model: "gpt-5.4",
+		bareModelProviders: ["opencode"],
+	});
+	assert.ok("error" in onlyOpenCode);
+	assert.match(onlyOpenCode.error, /opencode\/gpt-5\.4/);
+	assert.match(onlyOpenCode.error, /allowPaidOpencode: true/);
+});
+
+await test("nested OpenCode spawns report that paid routing is unavailable by policy", () => {
+	const nested = resolveRoute({
+		harness: "pi",
+		model: "opencode/gpt-5.4",
+		allowPaidOpencode: true,
+		nestedSpawn: true,
+	});
+	assert.ok("error" in nested);
+	assert.match(nested.error, /unavailable for nested subagent spawns by policy/);
+	assert.doesNotMatch(nested.error, /set allowPaidOpencode/);
+});
+
 await test("Claude-family OpenCode ids route to Claude Code without selecting paid OpenCode", () => {
 	assert.deepEqual(resolveRoute({ harness: "pi", model: "opencode/claude-fable-5" }), {
 		backend: "claude",

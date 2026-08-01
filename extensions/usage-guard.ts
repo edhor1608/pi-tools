@@ -6,11 +6,13 @@ import { codexUsageFromResponse, type CodexUsage, type CodexUsageWindow } from "
 import { setExtensionStatus } from "./shared/status-bus.ts";
 
 const CACHE_MAX_AGE_MS = 120_000;
+const MID_TURN_CHECK_INTERVAL_MS = 15_000;
 const LATCH_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 
 type GuardLevel = "warn" | "wrapup";
+type GuardChannel = "directive" | "notification";
 export type UsageGuardThresholds = { warnAt: number; wrapupAt: number };
 export type UsageGuardLatches = Record<string, number>;
 export type UsageGuardDecision = {
@@ -44,6 +46,8 @@ export function decideUsageGuard(
 	latches: UsageGuardLatches,
 	thresholds: UsageGuardThresholds,
 	now: number,
+	sessionId: string,
+	channel: GuardChannel,
 ): UsageGuardDecision {
 	const cutoff = now - LATCH_MAX_AGE_MS;
 	const nextLatches = Object.fromEntries(Object.entries(latches).filter(([, firedAt]) => firedAt > cutoff));
@@ -58,7 +62,7 @@ export function decideUsageGuard(
 	const threshold = level === "wrapup" ? thresholds.wrapupAt : thresholds.warnAt;
 	const freshWindows: CodexUsageWindow[] = [];
 	for (const window of windows.filter((candidate) => candidate.usedPercent >= threshold)) {
-		const key = latchKey(window, level);
+		const key = latchKey(sessionId, window, level, channel);
 		if (nextLatches[key] !== undefined) continue;
 		nextLatches[key] = now;
 		freshWindows.push(window);
@@ -95,29 +99,54 @@ ${crossedLines}
 Keep working, but stop expanding scope: avoid new fan-outs or long-running work, finish what is in flight, and persist intermediate results so an abrupt stop loses nothing. At ${thresholds.wrapupAt}% you will be asked to wrap up and write a handover.`;
 }
 
+export function shouldCheckUsageMidTurn(lastCheckedAt: number, now: number): boolean {
+	return now - lastCheckedAt >= MID_TURN_CHECK_INTERVAL_MS;
+}
+
 export default function usageGuardExtension(pi: ExtensionAPI): void {
+	let inMemoryUsage: CodexUsage | undefined;
+	let lastMidTurnCheckAt = 0;
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		try {
 			if (ctx.model?.provider !== "openai-codex") return;
 			const now = Date.now();
-			const usage = await readOrFetchUsage(now);
+			const usage = await readOrFetchUsage(now, inMemoryUsage);
 			if (!usage) return;
+			inMemoryUsage = usage;
 			const statePath = usageGuardStatePath();
 			const currentLatches = await readLatches(statePath);
 			const thresholds = usageGuardThresholds();
-			const decision = decideUsageGuard(usage.windows, currentLatches, thresholds, now);
+			const decision = decideUsageGuard(usage.windows, currentLatches, thresholds, now, ctx.sessionManager.getSessionId(), "directive");
 			if (decision.changed) await writeLatches(statePath, decision.latches);
 			if (!decision.level) return;
 
 			const directive = buildUsageGuardDirective(decision.level, decision.windows, usage.windows, thresholds);
-			setExtensionStatus(
-				"usage-guard",
-				decision.level === "wrapup"
-					? `Codex >=${thresholds.wrapupAt}% — wrap up now`
-					: `Codex >=${thresholds.warnAt}% — stop expanding scope`,
-				{ tone: decision.level === "wrapup" ? "error" : "warn", order: 20 },
-			);
+			publishGuardStatus(decision.level, thresholds);
 			return { systemPrompt: `${event.systemPrompt}\n\n${directive}` };
+		} catch {
+			return;
+		}
+	});
+
+	pi.on("tool_result", async (_event, ctx) => {
+		try {
+			if (ctx.model?.provider !== "openai-codex") return;
+			const now = Date.now();
+			if (!shouldCheckUsageMidTurn(lastMidTurnCheckAt, now)) return;
+			lastMidTurnCheckAt = now;
+			const usage = await readOrFetchUsage(now, inMemoryUsage);
+			if (!usage) return;
+			inMemoryUsage = usage;
+			const statePath = usageGuardStatePath();
+			const currentLatches = await readLatches(statePath);
+			const thresholds = usageGuardThresholds();
+			const decision = decideUsageGuard(usage.windows, currentLatches, thresholds, now, ctx.sessionManager.getSessionId(), "notification");
+			if (decision.changed) await writeLatches(statePath, decision.latches);
+			if (!decision.level) return;
+
+			publishGuardStatus(decision.level, thresholds);
+			ctx.ui.notify(midTurnNotification(decision.level, decision.windows, thresholds), decision.level === "wrapup" ? "error" : "warning");
 		} catch {
 			return;
 		}
@@ -130,8 +159,23 @@ function thresholdValue(raw: string | undefined, fallback: number): number {
 	return Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
 }
 
-function latchKey(window: CodexUsageWindow, level: GuardLevel): string {
-	return `${window.label}|${window.resetAt ?? "unknown"}|${level}`;
+function latchKey(sessionId: string, window: CodexUsageWindow, level: GuardLevel, channel: GuardChannel): string {
+	return `${sessionId}|${window.label}|${window.resetAt ?? "unknown"}|${level}|${channel}`;
+}
+
+function publishGuardStatus(level: GuardLevel, thresholds: UsageGuardThresholds): void {
+	setExtensionStatus(
+		"usage-guard",
+		level === "wrapup" ? `Codex >=${thresholds.wrapupAt}% — wrap up now` : `Codex >=${thresholds.warnAt}% — stop expanding scope`,
+		{ tone: level === "wrapup" ? "error" : "warn", order: 20 },
+	);
+}
+
+function midTurnNotification(level: GuardLevel, windows: CodexUsageWindow[], thresholds: UsageGuardThresholds): string {
+	const usage = windows.map((window) => `${window.label} ${window.usedPercent}%`).join(", ");
+	return level === "wrapup"
+		? `Codex usage crossed ${thresholds.wrapupAt}% mid-turn (${usage}) — wrap up and persist work now.`
+		: `Codex usage crossed ${thresholds.warnAt}% mid-turn (${usage}) — stop expanding scope.`;
 }
 
 function formatWindow(window: CodexUsageWindow): string {
@@ -147,9 +191,12 @@ function usageGuardStatePath(): string {
 	return join(process.env.PI_USAGE_GUARD_STATE_DIR || agentDir(), "usage-guard-state.json");
 }
 
-async function readOrFetchUsage(now: number): Promise<CodexUsage | undefined> {
-	const cached = await readStatuslineUsage();
-	if (isCodexUsageCacheFresh(cached, now)) return cached;
+async function readOrFetchUsage(now: number, inMemoryUsage: CodexUsage | undefined): Promise<CodexUsage | undefined> {
+	const statuslineUsage = await readStatuslineUsage();
+	const cached = [statuslineUsage, inMemoryUsage]
+		.filter((usage): usage is CodexUsage => isCodexUsageCacheFresh(usage, now))
+		.sort((left, right) => right.fetchedAt - left.fetchedAt)[0];
+	if (cached) return cached;
 	const credential = await readStoredCodexCredential();
 	if (!credential) return undefined;
 	const response = await fetch(CODEX_USAGE_URL, {

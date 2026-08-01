@@ -104,6 +104,7 @@ export default function (pi: ExtensionAPI) {
 		managerPromise ??= getRuntime()
 			.runPromise(SubagentManager)
 			.then((manager) => {
+				managerSync = manager;
 				manager.view.setOnSettled(onSettled);
 				manager.view.setOnStarted((id) => resultDelivery.consume([id]));
 				unsubStatus?.();
@@ -112,6 +113,52 @@ export default function (pi: ExtensionAPI) {
 				return manager;
 			});
 		return managerPromise;
+	};
+
+	// --- Shared control-plane handle ---------------------------------------
+	// Narrow handle over the LIVE manager for sibling extensions (review-loop),
+	// published on globalThis under a well-known symbol — the same cross-jiti
+	// sharing pattern as extensions/shared/status-bus.ts. Only spawn / waitFor
+	// / cancel / send / get are exposed; everything is lazy so publishing does
+	// not spin up the runtime early. Spawned agents appear in /subagents and
+	// share the manager's model-routing invariants.
+	let managerSync: SubagentManagerShape | undefined;
+	const PLANE_KEY = Symbol.for("pi-tools.subagent-plane.v1");
+	const planeParent = () => ({
+		parentCwd: sessionContext?.cwd ?? process.cwd(),
+		inheritedModel: sessionContext?.model ? { provider: sessionContext.model.provider, id: sessionContext.model.id } : undefined,
+		inheritedThinkingLevel: pi.getThinkingLevel(),
+		modelRegistry: sessionContext?.modelRegistry,
+	});
+	const planeHost = globalThis as { [PLANE_KEY]?: unknown };
+	planeHost[PLANE_KEY] = {
+		spawn: async (backend: "pi" | "claude", request: { prompt: string; title: string; cwd: string; model?: string }) => {
+			const manager = await getManager();
+			return runTool(
+				getRuntime(),
+				manager.spawn(backend, {
+					prompt: request.prompt,
+					title: request.title,
+					cwd: request.cwd,
+					mode: "worker",
+					model: request.model,
+					parent: planeParent(),
+				}),
+			);
+		},
+		waitFor: async (ids: readonly string[]) => {
+			const manager = await getManager();
+			await runTool(getRuntime(), manager.waitFor([...ids]));
+		},
+		cancel: async (ids: readonly string[]) => {
+			const manager = await getManager();
+			await runTool(getRuntime(), manager.cancel([...ids]));
+		},
+		send: async (id: string, text: string) => {
+			const manager = await getManager();
+			await runTool(getRuntime(), manager.send(id, text));
+		},
+		get: (id: string) => managerSync?.view.get(id),
 	};
 
 	const updateStatus = (manager: SubagentManagerShape) => {
@@ -179,6 +226,10 @@ export default function (pi: ExtensionAPI) {
 		unsubStatus = undefined;
 		ui?.setStatus("subagents", undefined);
 		ui = undefined;
+		// Retract the shared control-plane handle before the runtime dies so a
+		// sibling extension can never drive a disposed manager.
+		delete planeHost[PLANE_KEY];
+		managerSync = undefined;
 		const closing = runtime;
 		runtime = undefined;
 		managerPromise = undefined;

@@ -31,6 +31,9 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
 	"subagent_send",
 	"subagent_check",
 	"subagent_list",
+	// A child arming the review loop would spin up a hidden reviewer runtime,
+	// bypassing the recursive-subagent restriction. Root-session only.
+	"review_loop",
 	"workflow",
 	"ask_user",
 ] as const;
