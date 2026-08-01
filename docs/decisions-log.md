@@ -1,5 +1,64 @@
 # Decisions Log
 
+## 2026-08-01 Pi-Native Personal Agent System
+
+### Context
+
+Jonas's fresh Claude Code setup defines orchestration roles, benchmark-driven model selection, shared findings and memory, Jonas Voice, lifecycle failure detection, personal linting, and review-fix loops. Pi should adopt those semantics without copying Claude Code's external Codex wrapper mechanics: Codex models run natively in Pi, while every Claude-family model runs through the existing Claude Code backend and subscription. OpenCode is paid per token and must remain a rare, explicit opt-in rather than a fallback.
+
+The shared-memory contract is only partially initialized: `~/memories/findings/` has content, but `~/memories` is not yet a git repository and `memory/<repo>/` does not exist. Pi's custom statusline also replaces the built-in footer and currently hides statuses published by extensions such as subagents.
+
+### Decision
+
+Build the system in four phases:
+
+1. **Foundation:** initialize `~/memories` as a local-only git repository, add the `findings/` index and `memory/<repo>/` structure, keep `tool-failures.jsonl` outside git, inspect existing Claude and Codex memory stores before creating links, and copy the selected fresh skills into each harness deliberately. Audit and then remove retired Pi Fabric, the orphaned `~/.pi/agent/model-system-prompts/` configuration, and obsolete or misplaced Pi worktrees without deleting unmerged work.
+2. **Pi-native guards:** add strict model routing, compose extension statuses into the statusline, and add native lifecycle-error, usage-guard, personal-lint, and session-gap/catchup adapters. These replace shell-hook workarounds where Pi exposes direct lifecycle events.
+3. **Visible review mode:** add a session-persisted review-loop state machine with `/review-loop on|off|status|now`, agent-callable control, footer status, stable git fingerprints, verification-gate checks, and review execution through the existing subagent control plane.
+4. **Full loop:** triage findings, send one accepted fix batch back to the owning worker lineage, verify the result, and re-review until clean or a defined stop condition requires root-cause work or user input.
+
+Place each capability deliberately:
+
+- **Orchestration:** copy and adapt the fresh Claude orchestration skill for Pi. Preserve the orchestrator, advisor, worker, shepherd, and independent-reviewer role grammar; task cards with goal, acceptance criteria, file ownership, exclusions, verification command, and report format; worktree isolation through `wt`; explicit completion markers; reading every worker result; and independent verification of every done claim against git and gate evidence. Remove Claude-specific `codex exec`, wrapper-agent, timeout-resume, and shell-relay mechanics. Keep `extensions/subagents/` as a thin execution and control plane rather than embedding workflow policy in it.
+- **Model selection:** copy the fresh benchmark-blended model-by-effort table, methodology, focus/taste/advice dimensions, standing escalation permission, and update procedure into Pi's model-picking skill. Rewrite only execution mechanics: Codex is native Pi, Claude is Claude Code, and OpenCode is explicit paid opt-in. The model policy extension enforces routes while the skill supplies judgment about which model and effort to choose.
+- **Cross-harness execution:** do not port Claude-to-Codex CLI skills as cross-harness machinery. Replace them with native Pi spawning plus common prompt contracts. Preserve non-interactive execution, explicit anti-recursion instructions where an external harness is involved, fresh isolated reviewer context, and the rule that repository evidence outranks a completion report.
+- **Shared findings:** copy the finding skill into Pi while keeping `~/memories/findings/` as the shared data store. Preserve symptom-first lookup before unclear debugging, thresholded capture, deduplication, verification that an old finding still applies, compact symptom-keyed files, and `INDEX.md` maintenance.
+- **Shared project memory:** copy the memory skill into Pi while keeping `~/memories/memory/<repo>/` as the shared data store. Load relevant memory before non-trivial repository work, capture durable non-derivable feedback and context, prefer updates over duplicates, and commit memory mutations through a path-scoped, cross-process-safe operation.
+- **Jonas Voice:** copy the complete skill, `VOICE.md`, examples, flow rules, and corpus into Pi. Keep it a progressively disclosed writing skill rather than global prompt weight, and preserve register selection and corpus-grounded self-checks.
+- **Lifecycle failure detection:** add a Pi extension that observes failed `tool_result` events and provider/assistant failures, skips user interruptions, redacts likely secrets, and appends bounded records to the shared local failure log. Logging failures must never break the original agent run.
+- **Usage guards:** retain the existing Codex usage display and add latched warning/wrap-up policy at the agreed thresholds so the agent stops expanding scope, persists work, and produces a handoff before exhaustion. Claude Code children continue using Claude Code's subscription and guard mechanics; Pi must not query paid OpenCode or silently reroute when a limit is reached.
+- **Session gaps:** port the two-day inactivity check to Pi lifecycle events. On the first prompt after a long gap, inject the catchup workflow, verify current git/tasks/files/background-agent state, and reconnect Jonas to the task before proceeding.
+- **Personal lint:** keep `~/.agents/personal-lint/` as the shared implementation and add only a Pi adapter. Lint successful edited JS/TS files immediately and sweep agent-created changes at settlement when needed; return focused diagnostics to the agent, never run repository-wide fixes, and never present personal rules as project CI requirements.
+- **Review and review-fix:** copy the external-review and review-loop contracts, but use native Pi/Claude subagents. Preserve fresh eyes, reviewer independence, read-only intent, model-family diversity for risky work, concrete severity-ranked findings, explicit verdicts, validity checks, finding triage, same-worker fix lineage, and mandatory re-review of accepted fixes. Expose current phase, round, reviewer, and blocked reason in the TUI.
+
+Use these routing invariants:
+
+- Codex and other approved non-Claude Pi models run through Pi's native subagent backend.
+- `fable`, `opus`, `sonnet`, `haiku`, and all Claude-family model ids always route through Claude Code, even if a caller mistakenly requests the Pi harness.
+- A non-Claude model requested through the Claude harness is rejected.
+- OpenCode requires an explicit provider-qualified request and explicit opt-in. It is never selected as a fallback.
+- An unavailable requested model or backend is an error, never permission to substitute another provider.
+
+Keep skills as intentional per-harness copies. Do not introduce a canonical shared skill store or symlink all harness skill directories. Port only the semantic contracts each harness needs and accept that harness-specific copies can diverge as their mechanics evolve.
+
+Initialize `~/memories` as a local-only git repository. Do not add a remote yet and do not merge the separate generated `~/.codex/memories` repository blindly. Keep failure telemetry untracked because commands, paths, errors, and credentials may appear in it.
+
+Implement review-loop mode as a hybrid automatic mode. The user or an agent may turn it on when substantive work should enter the loop. Once enabled and the entry gate is green, the mode automatically reviews the stable target. A valid accepted finding always causes a fix followed by another verification and fresh re-review; fix and re-review are the purpose of the mode, not optional follow-up actions. Continue until the accepted lenses are clean or a hard stop fires. An invalid review is retried and never treated as a pass. Repeated major findings trigger root-cause/design handling rather than endless polishing. Backend failure blocks visibly and never falls back to OpenCode. The mode does not merge or land work unless that authority was separately granted.
+
+### Rationale
+
+Pi can switch Codex models natively and already has a Claude Code backend, so Claude Code's `codex exec`, wrapper-agent, timeout-resume, and shell-based cross-harness machinery would add indirection without value. Skills remain the right place for judgment, role grammar, model ratings, task-card contracts, and evidence rules. Extensions are the right place for lifecycle events, routing enforcement, persistent mode state, and TUI visibility. The existing subagent manager remains a thin execution and control plane rather than absorbing workflow policy.
+
+Per-harness skill copies are an explicit user choice. They permit each harness to express its native mechanics directly, at the cost of requiring deliberate synchronization of shared semantic changes.
+
+The review loop is agent-toggleable because the orchestrator must be able to enforce review discipline without waiting for a separate user command. Mandatory fix and re-review preserve the defining feedback loop while fingerprints, gates, validity checks, convergence rules, and blocking states prevent reviews of moving targets and unbounded silent churn.
+
+### Consequences
+
+The first implementation work must repair shared-memory assumptions and status visibility before automating reviews. Review state must survive session resume through Pi custom entries, while in-flight reviewer processes are treated as non-durable and restored as pending. The statusline becomes the single footer compositor and renders extension statuses on a second line. The review extension consumes a narrow typed interface from the existing subagent manager rather than creating another agent runtime.
+
+Skill drift is now accepted rather than eliminated. Ports must identify shared semantic changes explicitly and update the relevant harness copies when desired. Local-only memory has reviewable history on this machine but no off-machine backup until a separate remote decision is made.
+
 ## 2026-07-29 Host-Managed Claude Orchestration
 
 ### Context
