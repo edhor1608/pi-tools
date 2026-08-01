@@ -426,12 +426,17 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			});
 			return;
 		}
+		// Snapshot primitive baseline fields BEFORE send(): plane.get() returns a
+		// live mutable snapshot, so a turn that starts and settles while send()
+		// resolves would otherwise already be reflected in the baseline and
+		// waitForNewTurn would miss it and time out.
+		const preSend = { settledAt: baseline.settledAt, turns: baseline.turns };
 		try {
 			await plane.send(ownerId, instruction);
 			// send() to a SETTLED owner starts the new turn asynchronously; an
 			// immediate waitFor would see the stale "done" snapshot and pass
 			// verification against unfixed work. Wait for the new turn first.
-			const turn = await waitForNewTurn((id) => plane.get(id), ownerId, { settledAt: baseline.settledAt, turns: baseline.turns });
+			const turn = await waitForNewTurn((id) => plane.get(id), ownerId, preSend);
 			if (generation !== gen) return;
 			if (turn !== "observed") {
 				apply({
