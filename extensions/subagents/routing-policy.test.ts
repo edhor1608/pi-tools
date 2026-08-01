@@ -26,19 +26,40 @@ await test("the Claude harness rejects explicitly requested non-Claude models", 
 	assert.deepEqual(resolveRoute({ harness: "claude" }), { backend: "claude", model: undefined });
 });
 
-await test("paid OpenCode models require a provider-qualified id and explicit opt-in", () => {
-	const denied = resolveRoute({ harness: "pi", model: "opencode/gpt-5.4" });
-	assert.ok("error" in denied);
-	assert.match(denied.error, /OpenCode.*paid/);
-	assert.match(denied.error, /allowPaidOpencode: true/);
-	assert.deepEqual(resolveRoute({ harness: "pi", model: "opencode/gpt-5.4", allowPaidOpencode: true }), {
-		backend: "pi",
+await test("paid OpenCode requires both the user gate and spawn-time flag", () => {
+	const flagOnly = resolveRoute({
+		harness: "pi",
 		model: "opencode/gpt-5.4",
+		allowPaidOpencode: true,
+		paidOpencodeConfigPath: "/home/jonas/.pi/agent/pi-tools.json",
 	});
+	assert.ok("error" in flagOnly);
+	assert.match(flagOnly.error, /OpenCode is paid and disabled/);
+	assert.match(flagOnly.error, /Jonas must enable allowPaidOpencode in \/home\/jonas\/\.pi\/agent\/pi-tools\.json/);
+	assert.doesNotMatch(flagOnly.error, /changing|arguments|set allowPaidOpencode/);
+
+	const userConfigOnly = resolveRoute({
+		harness: "pi",
+		model: "opencode/gpt-5.4",
+		userAllowsPaidOpencode: true,
+	});
+	assert.ok("error" in userConfigOnly);
+	assert.match(userConfigOnly.error, /spawn-time allowPaidOpencode: true/);
+
+	assert.deepEqual(
+		resolveRoute({
+			harness: "pi",
+			model: "opencode/gpt-5.4",
+			userAllowsPaidOpencode: true,
+			allowPaidOpencode: true,
+		}),
+		{ backend: "pi", model: "opencode/gpt-5.4" },
+	);
 
 	const inherited = resolveRoute({
 		harness: "pi",
 		inheritedModel: { provider: "opencode", id: "gpt-5.4" },
+		userAllowsPaidOpencode: true,
 		allowPaidOpencode: true,
 	});
 	assert.ok("error" in inherited);
@@ -60,16 +81,91 @@ await test("bare model ids prefer an available native provider over OpenCode", (
 		harness: "pi",
 		model: "gpt-5.4",
 		bareModelProviders: ["opencode"],
+		userAllowsPaidOpencode: true,
 	});
 	assert.ok("error" in onlyOpenCode);
 	assert.match(onlyOpenCode.error, /opencode\/gpt-5\.4/);
-	assert.match(onlyOpenCode.error, /allowPaidOpencode: true/);
+	assert.match(onlyOpenCode.error, /explicit provider-qualified model/);
+});
+
+await test("all opencode-* providers require paid opt-in", () => {
+	const qualified = resolveRoute({ harness: "pi", model: "opencode-go/kimi-k2.5" });
+	assert.ok("error" in qualified);
+	assert.match(qualified.error, /OpenCode is paid and disabled/);
+	assert.deepEqual(
+		resolveRoute({
+			harness: "pi",
+			model: "opencode-go/kimi-k2.5",
+			userAllowsPaidOpencode: true,
+			allowPaidOpencode: true,
+		}),
+		{
+			backend: "pi",
+			model: "opencode-go/kimi-k2.5",
+		},
+	);
+
+	const bareOnly = resolveRoute({
+		harness: "pi",
+		model: "kimi-k2.5",
+		bareModelProviders: ["opencode-go"],
+		userAllowsPaidOpencode: true,
+	});
+	assert.ok("error" in bareOnly);
+	assert.match(bareOnly.error, /opencode-go\/kimi-k2\.5/);
+	assert.ok(
+		"error" in
+			resolveRoute({
+				harness: "pi",
+				model: "kimi-k2.5",
+				bareModelProviders: ["opencode-go"],
+				userAllowsPaidOpencode: true,
+				allowPaidOpencode: true,
+			}),
+	);
+
+	const inherited = resolveRoute({
+		harness: "pi",
+		inheritedModel: { provider: "opencode-go", id: "kimi-k2.5" },
+		userAllowsPaidOpencode: true,
+	});
+	assert.ok("error" in inherited);
+	assert.match(inherited.error, /opencode-go\/kimi-k2\.5/);
+});
+
+await test("resolved provider guards catch the live opencode alias shape", () => {
+	const liveShape = resolveRoute({
+		harness: "pi",
+		model: "opencode/kimi-k2.5",
+		resolvedModel: { provider: "opencode-go", id: "kimi-k2.5" },
+	});
+	assert.ok("error" in liveShape);
+	assert.match(liveShape.error, /OpenCode is paid and disabled/);
+
+	const userEnabledLiveShape = resolveRoute({
+		harness: "pi",
+		model: "opencode/kimi-k2.5",
+		resolvedModel: { provider: "opencode-go", id: "kimi-k2.5" },
+		userAllowsPaidOpencode: true,
+	});
+	assert.ok("error" in userEnabledLiveShape);
+	assert.match(userEnabledLiveShape.error, /opencode-go\/kimi-k2\.5/);
+	assert.match(userEnabledLiveShape.error, /spawn-time allowPaidOpencode: true/);
+
+	const nonPaidLookingAlias = resolveRoute({
+		harness: "pi",
+		model: "zen/kimi-k2.5",
+		resolvedModel: { provider: "opencode-go", id: "kimi-k2.5" },
+	});
+	assert.ok("error" in nonPaidLookingAlias);
+	assert.match(nonPaidLookingAlias.error, /OpenCode is paid and disabled/);
 });
 
 await test("nested OpenCode spawns report that paid routing is unavailable by policy", () => {
 	const nested = resolveRoute({
 		harness: "pi",
 		model: "opencode/gpt-5.4",
+		userAllowsPaidOpencode: true,
 		allowPaidOpencode: true,
 		nestedSpawn: true,
 	});

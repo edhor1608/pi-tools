@@ -116,6 +116,26 @@ void describe("mode toggling", () => {
 		assert.deepEqual(run([on()]).state.owner, { kind: "root" });
 		assert.deepEqual(run([on({ kind: "subagent", id: "sub-3" })]).state.owner, { kind: "subagent", id: "sub-3" });
 	});
+
+	void test("mode-on with owner on an ARMED loop updates the fix lineage in place", () => {
+		const { state, effects } = run([on(), on({ kind: "subagent", id: "sub-9" })]);
+		assert.equal(state.phase, "armed");
+		assert.deepEqual(state.owner, { kind: "subagent", id: "sub-9" });
+		assert.equal(state.epoch, 1, "lineage update must not re-arm (no epoch bump)");
+		assert.deepEqual(effects, [{ type: "check-gate", epoch: 1 }], "no second gate check from the update");
+	});
+
+	void test("mode-on with owner on a BLOCKED loop re-arms with the new lineage", () => {
+		const { state } = run([on(), settled(FP), failed("boom"), on({ kind: "subagent", id: "sub-9" })]);
+		assert.equal(state.phase, "armed");
+		assert.deepEqual(state.owner, { kind: "subagent", id: "sub-9" });
+	});
+
+	void test("mode-on with owner mid-round never retargets the in-flight op", () => {
+		const { state } = run([...untilTriage([finding("bug")]), accepted([finding("bug")]), on({ kind: "subagent", id: "sub-9" })]);
+		assert.equal(state.phase, "fixing");
+		assert.deepEqual(state.owner, { kind: "root" }, "in-flight fix keeps its original owner");
+	});
 });
 
 void describe("entry gate", () => {

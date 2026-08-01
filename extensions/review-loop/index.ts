@@ -56,7 +56,7 @@ import {
 } from "./fsm.ts";
 import { readReviewLoopStateFromEntries, REVIEW_LOOP_ENTRY_TYPE, serializeReviewLoopState } from "./persistence.ts";
 import { buildReviewPrompt, DEFAULT_NON_CLAUDE_REVIEWER_MODEL, parseReviewOutcome, pickReviewerRouting } from "./review-contract.ts";
-import { createSubagentReviewerBackend, getSubagentPlane, type ReviewerBackend } from "./reviewer.ts";
+import { createSubagentReviewerBackend, getSubagentPlane, type ReviewerBackend, waitForNewTurn } from "./reviewer.ts";
 
 const execFileAsync = promisify(execFile);
 const STATUS_ID = "review-loop";
@@ -113,11 +113,14 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * Caps: untracked files are content-hashed up to 1 MiB each (larger files
- * contribute path+size, which still detects create/delete/grow) and up to
- * 1000 files (beyond that, the overflow count is hashed so the fingerprint
- * still changes when more files appear). These bounds keep the gate cheap on
- * pathological trees without letting changes become invisible.
+ * Caps: untracked files are content-hashed up to 1 MiB each; larger files
+ * contribute path+size+mtimeMs (catches same-size in-place edits, which
+ * path+size alone would miss). Beyond the first 1000 files the overflow
+ * entries contribute their full sorted path+size+mtimeMs list, so edits in
+ * the overflow set still move the fingerprint. Residual weakness: an
+ * mtime-preserving same-size edit (e.g. `touch -r` after writing) to a capped
+ * or overflow file is invisible — accepted, since content-hashing such trees
+ * would make the entry gate unaffordable.
  */
 const UNTRACKED_CONTENT_CAP_BYTES = 1024 * 1024;
 const UNTRACKED_FILE_CAP = 1000;
@@ -152,11 +155,23 @@ async function computeGitFingerprint(cwd: string): Promise<FingerprintResult> {
 				if (info.size <= UNTRACKED_CONTENT_CAP_BYTES) {
 					hash.update(await readFile(join(cwd, path)));
 				} else {
-					hash.update(`oversize:${info.size}`);
+					// size AND mtime: a same-size in-place edit must still move the hash.
+					hash.update(`oversize:${info.size}:${info.mtimeMs}`);
 				}
 			} catch {
 				// Raced deletion/unreadable: still influences the fingerprint.
 				hash.update("unreadable");
+			}
+		}
+		// Overflow files beyond the cap contribute path+size+mtime (cheap stat,
+		// no content read) so changes there are not invisible either.
+		for (const path of untracked.slice(UNTRACKED_FILE_CAP)) {
+			hash.update("\u0000").update(path);
+			try {
+				const info = await stat(join(cwd, path));
+				hash.update(`:${info.size}:${info.mtimeMs}`);
+			} catch {
+				hash.update(":unreadable");
 			}
 		}
 		if (untracked.length > UNTRACKED_FILE_CAP) hash.update(`overflow:${untracked.length}`);
@@ -168,8 +183,14 @@ async function computeGitFingerprint(cwd: string): Promise<FingerprintResult> {
 
 // --- Presentation -----------------------------------------------------------
 
-function describeState(state: ReviewLoopState, settings: ReviewLoopSettings): string {
-	const verifyMode = settings.verifyCommand ? `cmd: ${settings.verifyCommand.join(" ")}` : "fingerprint-only";
+function describeState(state: ReviewLoopState, settings: ReviewLoopSettings, trusted: boolean): string {
+	// verifyCommand comes from PROJECT config and runs with user permissions:
+	// honored only when the project is trusted (ctx.isProjectTrusted()).
+	const verifyMode = settings.verifyCommand
+		? trusted
+			? `cmd: ${settings.verifyCommand.join(" ")}`
+			: "fingerprint-only (untrusted project config ignored)"
+		: "fingerprint-only";
 	switch (state.phase) {
 		case "idle":
 			return "review-loop off";
@@ -217,7 +238,12 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 	let state = initialState();
 	let sessionContext: ExtensionContext | undefined;
 	let reviewerBackend: ReviewerBackend | undefined;
-	let gateCheckRunning = false;
+	/**
+	 * The single live gate check, keyed by generation: a pre-switch check must
+	 * not suppress the post-switch (new-generation) resume reconciliation, or
+	 * the loop strands until the next settlement.
+	 */
+	let activeGate: { gen: number } | undefined;
 	/** Bumped on session switch/tree/shutdown: invalidates ALL in-flight async. */
 	let generation = 0;
 
@@ -229,13 +255,16 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			modelRegistry: sessionContext?.modelRegistry,
 		})));
 
+	/** Project trust gates execution of project-config commands (finding: untrusted verifyCommand). */
+	const isTrusted = () => sessionContext?.isProjectTrusted() ?? false;
+
 	const publishStatus = () => {
 		if (!isModeOn(state)) {
 			clearExtensionStatus(STATUS_ID);
 			return;
 		}
 		const tone = state.phase === "blocked" || state.phase === "hard-stop" ? "error" : state.phase === "clean" ? "info" : "warn";
-		setExtensionStatus(STATUS_ID, describeState(state, settings), { tone, order: 20 });
+		setExtensionStatus(STATUS_ID, describeState(state, settings, isTrusted()), { tone, order: 20 });
 	};
 
 	const persist = () => {
@@ -284,8 +313,12 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 	 */
 	const runGateCheck = async (forced: boolean) => {
 		const ctx = sessionContext;
-		if (!ctx || gateCheckRunning || !isModeOn(state)) return;
-		gateCheckRunning = true;
+		if (!ctx || !isModeOn(state)) return;
+		// Dedupe only within the CURRENT generation; a stale-generation check
+		// (pre-switch) never suppresses a new-generation one.
+		if (activeGate?.gen === generation) return;
+		const gate = { gen: generation };
+		activeGate = gate;
 		const gen = generation;
 		const epoch = state.epoch;
 		try {
@@ -305,7 +338,8 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			const stable = first.fingerprint === second.fingerprint && ctx.isIdle();
 			apply({ type: "work-settled", epoch, fingerprint: second.fingerprint, stable, forced });
 		} finally {
-			gateCheckRunning = false;
+			// Clear only if a newer-generation check has not replaced this one.
+			if (activeGate === gate) activeGate = undefined;
 		}
 	};
 
@@ -313,8 +347,14 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		const ctx = sessionContext;
 		if (!ctx) return;
 		const gen = generation;
+		// Family diversity is judged against the PRODUCER of the work: for a
+		// subagent owner that is the subagent's own model (snapshot label, e.g.
+		// "openai-codex/gpt-5.6-sol"); the root model is only the fallback when
+		// the snapshot is gone — and the baseline for root-owned work.
+		const producerModelId =
+			state.owner.kind === "subagent" ? (getSubagentPlane()?.get(state.owner.id)?.meta.modelLabel ?? ctx.model?.id) : ctx.model?.id;
 		const routing = pickReviewerRouting({
-			workProducerModelId: ctx.model?.id,
+			workProducerModelId: producerModelId,
 			preferDifferentFamily: true,
 			nonClaudeModel: settings.nonClaudeReviewerModel,
 		});
@@ -376,7 +416,8 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 	const runSubagentFix = async (effect: Extract<ReviewLoopEffect, { type: "dispatch-fix" }>, ownerId: string, instruction: string) => {
 		const gen = generation;
 		const plane = getSubagentPlane();
-		if (!plane || !plane.get(ownerId)) {
+		const baseline = plane?.get(ownerId);
+		if (!plane || !baseline) {
 			apply({
 				type: "backend-failure",
 				epoch: effect.epoch,
@@ -387,6 +428,20 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		}
 		try {
 			await plane.send(ownerId, instruction);
+			// send() to a SETTLED owner starts the new turn asynchronously; an
+			// immediate waitFor would see the stale "done" snapshot and pass
+			// verification against unfixed work. Wait for the new turn first.
+			const turn = await waitForNewTurn((id) => plane.get(id), ownerId, { settledAt: baseline.settledAt, turns: baseline.turns });
+			if (generation !== gen) return;
+			if (turn !== "observed") {
+				apply({
+					type: "backend-failure",
+					epoch: effect.epoch,
+					opId: effect.opId,
+					reason: `fix turn on subagent ${ownerId} ${turn === "gone" ? "owner disappeared" : "did not start (timeout)"} — never treated as a pass`,
+				});
+				return;
+			}
 			await plane.waitFor([ownerId]);
 			if (generation !== gen) return;
 			apply({ type: "fix-completed", epoch: effect.epoch, opId: effect.opId });
@@ -421,7 +476,9 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			apply({ type: "verify-failed", epoch: effect.epoch, opId: effect.opId, reason: "working tree unchanged after fix turn" });
 			return;
 		}
-		const [command, ...args] = settings.verifyCommand ?? [];
+		// Untrusted project: never execute project-config commands. Status shows
+		// "fingerprint-only (untrusted project config ignored)".
+		const [command, ...args] = (isTrusted() ? settings.verifyCommand : undefined) ?? [];
 		if (command) {
 			try {
 				await execFileAsync(command, args, { cwd: ctx.cwd, maxBuffer: 32 * 1024 * 1024, timeout: VERIFY_COMMAND_TIMEOUT_MS });
@@ -455,11 +512,14 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 				apply({ type: "mode-off", by });
 				return "Review loop disabled; in-flight reviewers cancelled.";
 			case "now":
-				if (!isModeOn(state)) apply({ type: "mode-on", by, owner });
+				// An owner passed while already active updates the fix lineage on
+				// an armed/blocked loop (FSM rule); it never retargets an
+				// in-flight op mid-round.
+				if (!isModeOn(state) || owner) apply({ type: "mode-on", by, owner });
 				void runGateCheck(true);
 				return "Gate check triggered; a review starts if the target is stable.";
 			case "status":
-				return describeState(state, settings);
+				return describeState(state, settings, isTrusted());
 		}
 	};
 
@@ -492,7 +552,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			const owner: FixOwner | undefined = params.owner_subagent_id ? { kind: "subagent", id: params.owner_subagent_id } : undefined;
 			const message = handleAction(params.action, "agent", owner);
 			return {
-				content: [{ type: "text", text: `${message}\n${describeState(state, settings)}` }],
+				content: [{ type: "text", text: `${message}\n${describeState(state, settings, isTrusted())}` }],
 				details: { phase: state.phase, round: state.round, blockedReason: state.blockedReason },
 			};
 		},

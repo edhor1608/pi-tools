@@ -78,20 +78,36 @@ void test("persistent index lock contention is reported after three attempts", a
 	assert.equal(addAttempts, 3);
 });
 
-void test("commit failures publish one warning", () => {
+void test("no-change results stay silent while commit failures warn once", () => {
 	const statuses: Array<{ id: string; text: string; tone?: string }> = [];
 	const publishFailure = createMemorySyncFailurePublisher((id, text, options) => {
 		statuses.push({ id, text, tone: options?.tone });
 	});
 
 	publishFailure("noop");
+	assert.deepEqual(statuses, []);
 	publishFailure("failed");
 	publishFailure("failed");
 	assert.deepEqual(statuses, [{ id: "memories-sync", text: "memory commit failed", tone: "warn" }]);
 });
 
-void test("non-git memory roots are ignored", async (context) => {
+void test("non-git memory roots return a distinct result and publish one warning", async (context) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-memories-not-git-"));
 	context.after(async () => rm(directory, { recursive: true, force: true }));
-	assert.equal(await commitMemoryChanges({ repoRoot: directory, basename: "note.md" }), "noop");
+	const statuses: Array<{ id: string; text: string; tone?: string }> = [];
+	const publishFailure = createMemorySyncFailurePublisher((id, text, options) => {
+		statuses.push({ id, text, tone: options?.tone });
+	});
+
+	const result = await commitMemoryChanges({ repoRoot: directory, basename: "note.md" });
+	assert.equal(result, "not-git-repo");
+	publishFailure(result);
+	publishFailure(result);
+	assert.deepEqual(statuses, [
+		{
+			id: "memories-sync",
+			text: "~/memories is not a git repository — memory writes are not being committed",
+			tone: "warn",
+		},
+	]);
 });

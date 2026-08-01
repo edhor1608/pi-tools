@@ -24,6 +24,7 @@ import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { BackendName, SubagentSnapshot } from "../subagents/src/domain.ts";
 import { SubagentManager, type SubagentManagerShape } from "../subagents/src/manager.ts";
 import { createSubagentRuntime, runTool, type SubagentRuntime } from "../subagents/src/runtime.ts";
+import { PLANE_KEY } from "./plane-claim.ts";
 
 // --- Shared control-plane handle -------------------------------------------
 
@@ -48,10 +49,42 @@ export interface SubagentPlane {
 	get(id: string): SubagentSnapshot | undefined;
 }
 
-const PLANE_KEY = Symbol.for("pi-tools.subagent-plane.v1");
-
 export function getSubagentPlane(): SubagentPlane | undefined {
 	return (globalThis as { [PLANE_KEY]?: SubagentPlane })[PLANE_KEY];
+}
+
+/** Turn-restart baseline captured BEFORE `plane.send()` to a settled subagent. */
+export interface TurnBaseline {
+	settledAt?: number;
+	turns: number;
+}
+
+/**
+ * After `plane.send()` to a SETTLED subagent, the new turn starts
+ * asynchronously — an immediate `waitFor` would see the stale "done" snapshot
+ * and return before the fix ran. Poll until the snapshot either goes
+ * "running" or shows a completed NEW turn (settledAt/turns moved past the
+ * baseline); only then is `waitFor` meaningful. Timeout is a hard failure the
+ * caller must surface as blocked, never a silent pass.
+ */
+export async function waitForNewTurn(
+	get: (id: string) => SubagentSnapshot | undefined,
+	id: string,
+	baseline: TurnBaseline,
+	options?: { timeoutMs?: number; pollMs?: number },
+): Promise<"observed" | "timeout" | "gone"> {
+	const timeoutMs = options?.timeoutMs ?? 60_000;
+	const pollMs = options?.pollMs ?? 50;
+	for (let waited = 0; ; waited += pollMs) {
+		const snap = get(id);
+		if (!snap) return "gone";
+		if (snap.status === "running") return "observed";
+		// A fast fix turn can start AND settle between polls: a moved settledAt
+		// or turn count is just as much proof of the new turn as "running".
+		if (snap.turns !== baseline.turns || snap.settledAt !== baseline.settledAt) return "observed";
+		if (waited >= timeoutMs) return "timeout";
+		await new Promise((resolve) => setTimeout(resolve, pollMs));
+	}
 }
 
 // --- Reviewer backend -------------------------------------------------------
@@ -98,6 +131,12 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 	const activeIds = new Set<string>();
 	/** Ids torn down via cancelActive; their runs report `cancelled: true`. */
 	const cancelledIds = new Set<string>();
+	/**
+	 * Bumped by cancelActive. A spawn that RESOLVES after a cancel (mode-off
+	 * raced the pending spawn, so its id was not yet in activeIds) is cancelled
+	 * on resolution instead of silently running on.
+	 */
+	let cancelSeq = 0;
 
 	const getManager = () => {
 		runtime ??= createSubagentRuntime();
@@ -121,12 +160,17 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 	};
 
 	const runViaPlane = async (plane: SubagentPlane, request: ReviewRequest): Promise<ReviewerRunResult> => {
+		const spawnedAtCancelSeq = cancelSeq;
 		const snap = await plane.spawn(request.backend, {
 			prompt: request.prompt,
 			title: request.title,
 			cwd: request.cwd,
 			model: request.model,
 		});
+		if (cancelSeq !== spawnedAtCancelSeq) {
+			await plane.cancel([snap.id]).catch(() => undefined);
+			return { ok: false, raw: "", error: "reviewer cancelled", cancelled: true, subagentId: snap.id };
+		}
 		activeIds.add(snap.id);
 		try {
 			await plane.waitFor([snap.id]);
@@ -140,6 +184,7 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 		const manager = await getManager();
 		const active = runtime;
 		if (!active) throw new Error("reviewer runtime already disposed");
+		const spawnedAtCancelSeq = cancelSeq;
 		const snap = await runTool(
 			active,
 			manager.spawn(request.backend, {
@@ -152,6 +197,10 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 			}),
 			{ interruptMessage: "Reviewer spawn aborted." },
 		);
+		if (cancelSeq !== spawnedAtCancelSeq) {
+			await runTool(active, manager.cancel([snap.id]), { interruptMessage: "Reviewer cancel aborted." }).catch(() => undefined);
+			return { ok: false, raw: "", error: "reviewer cancelled", cancelled: true, subagentId: snap.id };
+		}
 		activeIds.add(snap.id);
 		try {
 			await runTool(active, manager.waitFor([snap.id]), { interruptMessage: "Reviewer wait aborted." });
@@ -171,6 +220,7 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 			}
 		},
 		async cancelActive() {
+			cancelSeq += 1; // pending spawns cancel themselves on resolution
 			const ids = [...activeIds];
 			activeIds.clear();
 			if (ids.length === 0) return;

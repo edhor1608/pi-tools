@@ -474,6 +474,14 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 	switch (event.type) {
 		case "mode-on": {
 			if (state.phase !== "idle" && state.phase !== "blocked" && state.phase !== "hard-stop") {
+				// Already active: an explicit owner still UPDATES the fix lineage
+				// while the loop is merely armed (no round running). It never
+				// retargets an in-flight op mid-round — mid-round phases ignore it.
+				if (state.phase === "armed" && event.owner) {
+					const next = cloneState(state);
+					next.owner = { ...event.owner };
+					return { state: next, effects: [] };
+				}
 				return noChange(state);
 			}
 			const next = armed(state);

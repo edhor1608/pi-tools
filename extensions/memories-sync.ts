@@ -23,14 +23,16 @@ export interface MemoryCommitOptions {
 	run?: (command: string, args: string[], cwd: string) => Promise<CommandResult>;
 }
 
-export type MemoryCommitResult = "committed" | "noop" | "failed";
+export type MemoryCommitResult = "committed" | "noop" | "failed" | "not-git-repo";
 
 export const createMemorySyncFailurePublisher = (publish: typeof setExtensionStatus = setExtensionStatus) => {
 	let published = false;
 	return (result: MemoryCommitResult): void => {
-		if (result !== "failed" || published) return;
+		if (published || (result !== "failed" && result !== "not-git-repo")) return;
 		published = true;
-		publish("memories-sync", "memory commit failed", { tone: "warn", order: 40 });
+		const text =
+			result === "not-git-repo" ? "~/memories is not a git repository — memory writes are not being committed" : "memory commit failed";
+		publish("memories-sync", text, { tone: "warn", order: 40 });
 	};
 };
 
@@ -105,7 +107,7 @@ export const commitMemoryChanges = async (options: MemoryCommitOptions): Promise
 	try {
 		const run = options.run ?? runCommand;
 		const gitDirResult = await runGit(run, options.repoRoot, ["rev-parse", "--git-dir"]);
-		if (gitDirResult.code !== 0) return "noop";
+		if (gitDirResult.code !== 0) return "not-git-repo";
 
 		const gitDir = gitDirResult.stdout.trim();
 		const resolvedGitDir = resolve(options.repoRoot, gitDir || ".git");

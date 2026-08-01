@@ -47,6 +47,25 @@ function bounded(text: string) {
 	return text.slice(0, ERROR_TEXT_MAX_LENGTH);
 }
 
+/** Mirror the Pi backend's model lookup so routing can guard the concrete provider before spawning. */
+function resolvedModelForRouting(task: SpawnTask) {
+	const registry = task.parent.modelRegistry;
+	if (!task.model) return task.parent.inheritedModel;
+	if (!registry) return undefined;
+
+	const slash = task.model.indexOf("/");
+	if (slash > 0) {
+		const found = registry.find(task.model.slice(0, slash), task.model.slice(slash + 1));
+		return found ? { provider: found.provider, id: found.id } : undefined;
+	}
+	if (task.parent.inheritedModel) {
+		const found = registry.find(task.parent.inheritedModel.provider, task.model);
+		if (found) return { provider: found.provider, id: found.id };
+	}
+	const matches = registry.getAll().filter((model) => model.id === task.model);
+	return matches.length === 1 ? { provider: matches[0]!.provider, id: matches[0]!.id } : undefined;
+}
+
 function nestedResultMessage(snap: SubagentSnapshot) {
 	const verb = snap.status === "error" ? "failed" : "finished";
 	const output = (snap.finalText || "(no output)").slice(-NESTED_RESULT_MAX_LENGTH);
@@ -134,7 +153,9 @@ export interface SubagentReadModel {
 export interface CancelResult extends NestedCancelResult {}
 
 export interface SpawnOptions {
+	readonly userAllowsPaidOpencode?: boolean;
 	readonly allowPaidOpencode?: boolean;
+	readonly paidOpencodeConfigPath?: string;
 }
 
 export interface SubagentManagerShape {
@@ -576,8 +597,11 @@ const makeManager = Effect.gen(function* () {
 				harness: requestedBackend,
 				model: requestedTask.model,
 				inheritedModel: requestedTask.parent.inheritedModel,
+				resolvedModel: resolvedModelForRouting(requestedTask),
 				bareModelProviders,
+				userAllowsPaidOpencode: options?.userAllowsPaidOpencode,
 				allowPaidOpencode: options?.allowPaidOpencode,
+				paidOpencodeConfigPath: options?.paidOpencodeConfigPath,
 				nestedSpawn: parentId !== undefined,
 			});
 			if ("error" in route) return yield* new SpawnError({ message: route.error });

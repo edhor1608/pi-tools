@@ -106,6 +106,18 @@ void describe("cross-family routing", () => {
 		assert.deepEqual(routing, { backend: "pi", model: "gpt-5.6" });
 	});
 
+	void test("a subagent producer is keyed by its snapshot model label, not the root model", () => {
+		// index.ts passes the OWNER subagent's meta.modelLabel (e.g. a codex
+		// worker) — its diverse reviewer must be Claude even when the root
+		// session itself runs a Claude model.
+		assert.deepEqual(pickReviewerRouting({ workProducerModelId: "openai-codex/gpt-5.6-sol", preferDifferentFamily: true }), {
+			backend: "claude",
+		});
+		// ...and a Claude-labelled subagent producer gets the explicit non-Claude reviewer.
+		const claudeProducer = pickReviewerRouting({ workProducerModelId: "claude-opus-4-6", preferDifferentFamily: true });
+		assert.deepEqual(claudeProducer, { backend: "pi", model: DEFAULT_NON_CLAUDE_REVIEWER_MODEL });
+	});
+
 	void test("non-claude work routes its diverse review to claude", () => {
 		assert.deepEqual(pickReviewerRouting({ workProducerModelId: "gpt-5.6-sol", preferDifferentFamily: true }), {
 			backend: "claude",

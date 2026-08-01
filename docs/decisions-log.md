@@ -59,6 +59,20 @@ The first implementation work must repair shared-memory assumptions and status v
 
 Skill drift is now accepted rather than eliminated. Ports must identify shared semantic changes explicitly and update the relevant harness copies when desired. Local-only memory has reviewable history on this machine but no off-machine backup until a separate remote decision is made.
 
+### Implementation addendum (2026-08-01)
+
+Durable decisions made while building the system:
+
+- **Cross-extension state uses `globalThis` + `Symbol.for`.** Pi loads every extension through its own jiti instance with module caching disabled, so module-level singletons are per-extension, not per-process. The status bus (`pi-tools.status-bus.v1`), the subagent control-plane handle (`pi-tools.subagent-plane.v1`), and the lifecycle-failures primary claim all anchor shared state on the global symbol registry. Any future cross-extension channel must use this pattern; a plain module global silently fails.
+- **The statusline composes two status sources**: the typed status bus (tone + order) and Pi's native `ctx.ui.setStatus` map (text only, sorted by key, bus wins on id collision). Extensions inside this package publish to the bus; foreign extensions remain visible through the native path.
+- **Reviewers run on the live subagent manager** via a narrow published handle (`spawn`/`waitFor`/`send`/`cancel`/`get`), so review runs appear in `/subagents`, inherit the routing invariants, and are cancelled on mode-off and teardown. The reviewer's private fallback runtime exists only for tests and handle absence. `review_loop` is excluded from ordinary Pi children so a child cannot arm a hidden review runtime.
+- **Review targets are fingerprinted completely or not at all**: HEAD, porcelain status, tracked diff, and untracked file contents (bounded: 1000 files, 1 MiB each) in deterministic order. Non-git or failing-git states block visibly instead of producing a stable constant. All async review/fix/verify operations carry epoch and operation ids; stale completions are ignored, and resume reconciles every active phase back into a dispatchable pending action.
+- **Verification is a configured gate, not a byte-change check**: `.pi/review-loop.json` may set `verifyCommand` (exit 0 required in addition to a changed fingerprint) and `nonClaudeReviewerModel` (default `gpt-5.6-sol`) for cross-family reviews of Claude-authored work. Without a command the status labels the weaker mode `verify: fingerprint-only`.
+- **Usage-guard latches are session-scoped** (`session|window|resetAt|level|channel`), matching the Claude reference semantics so a fresh session near exhaustion is still warned, with throttled mid-turn checks delivering notify/status warnings without consuming the next-turn system-prompt directive.
+- **Bare model ids prefer native providers.** A bare id that resolves under both OpenCode and a native provider routes natively (that is the requested model, not a substitution); an OpenCode-only bare id errors with the provider-qualified id and the `allowPaidOpencode` opt-in. Non-Claude OpenCode models are unavailable to nested orchestrator spawns by policy.
+- **Pi skill frontmatter must satisfy a strict YAML parser.** Descriptions containing `": "` need folded block scalars; Claude Code's lenient parser masks this, so ported skills are validated against Pi's own `loadSkillsFromDir` before being considered installed.
+- **Cleanup outcomes:** `~/repos/pi-fabric` (no remote; only history) archived to `~/backups/pi-fabric-archive-20260801.tar.gz` with a provenance README, then removed. `~/.pi/agent/model-system-prompts/` backed up to `~/backups/` and removed. Left untouched and reported for later manual triage: `~/repos/pi-tools-add-worktrees-extension` (dirty), `~/repos/circle-of-doom-*-wt` (unpushed commits), `~/repos/worktrees/` (misplaced parking directory).
+
 ## 2026-07-29 Host-Managed Claude Orchestration
 
 ### Context

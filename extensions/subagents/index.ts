@@ -24,7 +24,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getMarkdownTheme, keyHint, truncateHead } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	getAgentDir,
+	getMarkdownTheme,
+	keyHint,
+	truncateHead,
+} from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
@@ -37,6 +45,7 @@ import {
 	type SubagentSnapshot,
 } from "./src/domain.ts";
 import { formatActivityStatus, formatContextUtilization } from "./src/format.ts";
+import { claimSubagentPlane, releaseSubagentPlane } from "../review-loop/plane-claim.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
 	buildSubagentResultMessage,
@@ -62,6 +71,21 @@ import { openSubagentPicker } from "./src/ui/takeover.ts";
 const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
 const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
 const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024;
+const PAID_OPENCODE_CONFIG_FILE = "pi-tools.json";
+
+function loadPaidOpenCodeUserGate(configPath: string) {
+	try {
+		const parsed: unknown = JSON.parse(fs.readFileSync(configPath, "utf8"));
+		return (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"allowPaidOpencode" in parsed &&
+			(parsed as { allowPaidOpencode?: unknown }).allowPaidOpencode === true
+		);
+	} catch {
+		return false;
+	}
+}
 
 function describeSubagent(snap: SubagentSnapshot) {
 	const details = [
@@ -90,6 +114,8 @@ function truncatedOutput(snap: SubagentSnapshot, maxBytes = SUBAGENT_OUTPUT_MAX_
 }
 
 export default function (pi: ExtensionAPI) {
+	const paidOpencodeConfigPath = path.join(getAgentDir(), PAID_OPENCODE_CONFIG_FILE);
+	const userAllowsPaidOpencode = loadPaidOpenCodeUserGate(paidOpencodeConfigPath);
 	let runtime: SubagentRuntime | undefined;
 	let managerPromise: Promise<SubagentManagerShape> | undefined;
 	let sessionContext: ExtensionContext | undefined;
@@ -122,16 +148,21 @@ export default function (pi: ExtensionAPI) {
 	// / cancel / send / get are exposed; everything is lazy so publishing does
 	// not spin up the runtime early. Spawned agents appear in /subagents and
 	// share the manager's model-routing invariants.
+	//
+	// Publication is FIRST-CLAIM-WINS (see plane-claim.ts): Pi children run
+	// in-process and instantiate this extension again — without the ownership
+	// token a child would overwrite the root's handle with its own hidden
+	// manager and delete it on the child's shutdown. The root session loads
+	// first, so the root instance claims; later instances get no token, never
+	// publish, and never retract.
 	let managerSync: SubagentManagerShape | undefined;
-	const PLANE_KEY = Symbol.for("pi-tools.subagent-plane.v1");
 	const planeParent = () => ({
 		parentCwd: sessionContext?.cwd ?? process.cwd(),
 		inheritedModel: sessionContext?.model ? { provider: sessionContext.model.provider, id: sessionContext.model.id } : undefined,
 		inheritedThinkingLevel: pi.getThinkingLevel(),
 		modelRegistry: sessionContext?.modelRegistry,
 	});
-	const planeHost = globalThis as { [PLANE_KEY]?: unknown };
-	planeHost[PLANE_KEY] = {
+	const planeToken = claimSubagentPlane({
 		spawn: async (backend: "pi" | "claude", request: { prompt: string; title: string; cwd: string; model?: string }) => {
 			const manager = await getManager();
 			return runTool(
@@ -159,7 +190,7 @@ export default function (pi: ExtensionAPI) {
 			await runTool(getRuntime(), manager.send(id, text));
 		},
 		get: (id: string) => managerSync?.view.get(id),
-	};
+	});
 
 	const updateStatus = (manager: SubagentManagerShape) => {
 		if (!ui) return;
@@ -227,8 +258,9 @@ export default function (pi: ExtensionAPI) {
 		ui?.setStatus("subagents", undefined);
 		ui = undefined;
 		// Retract the shared control-plane handle before the runtime dies so a
-		// sibling extension can never drive a disposed manager.
-		delete planeHost[PLANE_KEY];
+		// sibling extension can never drive a disposed manager. No-op without
+		// the ownership token: a child's shutdown never clobbers the root's.
+		releaseSubagentPlane(planeToken);
 		managerSync = undefined;
 		const closing = runtime;
 		runtime = undefined;
@@ -268,7 +300,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			allowPaidOpencode: Type.Optional(
 				Type.Boolean({
-					description: "Explicitly opt in to paid OpenCode usage for a provider-qualified opencode/* model.",
+					description: `Per-spawn confirmation for paid OpenCode. Only effective when Jonas already enabled allowPaidOpencode in ${paidOpencodeConfigPath} before this extension loaded.`,
 				}),
 			),
 			mode: Type.Optional(
@@ -310,7 +342,9 @@ export default function (pi: ExtensionAPI) {
 						},
 					},
 					{
+						userAllowsPaidOpencode,
 						allowPaidOpencode: params.allowPaidOpencode,
+						paidOpencodeConfigPath,
 					},
 				),
 				{ signal, interruptMessage: "Subagent spawn aborted." },
