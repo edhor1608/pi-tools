@@ -5,6 +5,7 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getExtensionStatuses, onStatusChange, type ExtensionStatus } from "./shared/status-bus.ts";
 
 const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 const CACHE_PATH = join(PI_AGENT_DIR, "pi-statusline-cache.json");
@@ -44,7 +45,7 @@ type Cache = {
 	lastError?: string;
 };
 
-type RenderTheme = {
+export type RenderTheme = {
 	fg(color: string, text: string): string;
 	bold(text: string): string;
 };
@@ -115,11 +116,13 @@ export default function statuslineExtension(pi: ExtensionAPI): void {
 function installFooter(ctx: PiContext): void {
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		requestRender = () => tui.requestRender();
-		const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+		const unsubscribeBranch = footerData.onBranchChange(() => tui.requestRender());
+		const unsubscribeStatus = onStatusChange(() => requestRender?.());
 		return {
 			dispose: () => {
 				if (requestRender) requestRender = undefined;
-				unsubscribe();
+				unsubscribeBranch();
+				unsubscribeStatus();
 			},
 			invalidate() {},
 			render(width: number): string[] {
@@ -130,10 +133,42 @@ function installFooter(ctx: PiContext): void {
 					renderModel(ctx, theme),
 					renderLimits(theme, ctx),
 				].filter((part) => part.length > 0);
-				return [truncateToWidth(parts.join(theme.fg("dim", "  │  ")), width)];
+				const firstLine = truncateToWidth(parts.join(theme.fg("dim", "  │  ")), width);
+				return composeFooterLines(firstLine, theme, width, getExtensionStatuses(), footerData.getExtensionStatuses());
 			},
 		};
 	});
+}
+
+export function composeFooterLines(
+	firstLine: string,
+	theme: RenderTheme,
+	width: number,
+	statuses: readonly ExtensionStatus[],
+	nativeStatuses: ReadonlyMap<string, string> = new Map(),
+): string[] {
+	const busIds = new Set(statuses.map(({ id }) => id));
+	const segments = [...statuses]
+		.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+		.map(({ text, tone }) => theme.fg(toneColor(tone), sanitizeStatusText(text)));
+	for (const [id, text] of [...nativeStatuses].sort(([a], [b]) => a.localeCompare(b))) {
+		if (!busIds.has(id)) segments.push(sanitizeStatusText(text));
+	}
+	if (segments.length === 0) return [firstLine];
+	return [firstLine, truncateToWidth(segments.join(theme.fg("dim", " | ")), width)];
+}
+
+function toneColor(tone: ExtensionStatus["tone"]): string {
+	if (tone === "warn") return "warning";
+	if (tone === "error") return "error";
+	return "dim";
+}
+
+function sanitizeStatusText(text: string): string {
+	return text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
 }
 
 function renderLocation(ctx: PiContext, theme: RenderTheme, branch: string | null): string {

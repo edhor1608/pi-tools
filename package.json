@@ -83,10 +83,16 @@
 	"pi": {
 		"extensions": [
 			"./extensions/file-footnotes.ts",
+			"./extensions/lifecycle-failures.ts",
+			"./extensions/memories-sync.ts",
+			"./extensions/personal-lint.ts",
+			"./extensions/review-loop/index.ts",
+			"./extensions/session-gap.ts",
 			"./extensions/subagents/index.ts",
 			"./extensions/stash.ts",
 			"./extensions/statusline.ts",
-			"./extensions/structured-compaction/index.ts"
+			"./extensions/structured-compaction/index.ts",
+			"./extensions/usage-guard.ts"
 		],
 		"skills": [
 			"./skills/subagents"

@@ -215,6 +215,11 @@ export default function (pi: ExtensionAPI) {
 					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.model,
 				}),
 			),
+			allowPaidOpencode: Type.Optional(
+				Type.Boolean({
+					description: "Explicitly opt in to paid OpenCode usage for a provider-qualified opencode/* model.",
+				}),
+			),
 			mode: Type.Optional(
 				StringEnum(SUBAGENT_MODES, {
 					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.mode,
@@ -237,20 +242,26 @@ export default function (pi: ExtensionAPI) {
 			const title = params.name.trim().slice(0, 160) || "subagent";
 			const snap = await runTool(
 				getRuntime(),
-				manager.spawn(params.harness, {
-					prompt: params.prompt,
-					title,
-					cwd,
-					mode: params.mode,
-					model: params.model,
-					reasoningEffort: params.reasoning_effort,
-					parent: {
-						parentCwd: ctx.cwd,
-						inheritedModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
-						inheritedThinkingLevel: pi.getThinkingLevel(),
-						modelRegistry: ctx.modelRegistry,
+				manager.spawn(
+					params.harness,
+					{
+						prompt: params.prompt,
+						title,
+						cwd,
+						mode: params.mode,
+						model: params.model,
+						reasoningEffort: params.reasoning_effort,
+						parent: {
+							parentCwd: ctx.cwd,
+							inheritedModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+							inheritedThinkingLevel: pi.getThinkingLevel(),
+							modelRegistry: ctx.modelRegistry,
+						},
 					},
-				}),
+					{
+						allowPaidOpencode: params.allowPaidOpencode,
+					},
+				),
 				{ signal, interruptMessage: "Subagent spawn aborted." },
 			);
 

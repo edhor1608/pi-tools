@@ -32,6 +32,7 @@ import type {
 	TranscriptItem,
 } from "./domain.ts";
 import { BackendUnavailableError, SendError, SpawnError } from "./domain.ts";
+import { resolveRoute } from "./routing-policy.ts";
 export const MAX_TRACKED = 64;
 export const MAX_ORCHESTRATOR_DEPTH = 8;
 const STOP_TIMEOUT_MS = 5_000;
@@ -44,29 +45,6 @@ const NESTED_RESULT_MAX_LENGTH = 24 * 1_024;
 
 function bounded(text: string) {
 	return text.slice(0, ERROR_TEXT_MAX_LENGTH);
-}
-
-const CLAUDE_MODEL_ALIASES = new Set(["fable", "haiku", "opus", "sonnet"]);
-
-function claudeModelId(model: string, provider?: string) {
-	const segments = model.split("/");
-	const modelId = segments.at(-1) ?? model;
-	const providerId = provider ?? (segments.length > 1 ? segments[0] : undefined);
-	const lowerModelId = modelId.toLowerCase();
-	return providerId?.toLowerCase() === "anthropic" || /^claude(?:-|$)/.test(lowerModelId) || CLAUDE_MODEL_ALIASES.has(lowerModelId)
-		? modelId
-		: undefined;
-}
-
-function routeSpawn(backend: BackendName, task: SpawnTask): { backend: BackendName; task: SpawnTask } {
-	const inherited = task.parent.inheritedModel;
-	const model = task.model
-		? claudeModelId(task.model)
-		: backend === "pi" && inherited
-			? claudeModelId(inherited.id, inherited.provider)
-			: undefined;
-	if (!model) return { backend, task };
-	return { backend: "claude", task: { ...task, model } };
 }
 
 function nestedResultMessage(snap: SubagentSnapshot) {
@@ -155,8 +133,16 @@ export interface SubagentReadModel {
 
 export interface CancelResult extends NestedCancelResult {}
 
+export interface SpawnOptions {
+	readonly allowPaidOpencode?: boolean;
+}
+
 export interface SubagentManagerShape {
-	spawn(backend: BackendName, task: SpawnTask): Effect.Effect<SubagentSnapshot, SpawnError | BackendUnavailableError>;
+	spawn(
+		backend: BackendName,
+		task: SpawnTask,
+		options?: SpawnOptions,
+	): Effect.Effect<SubagentSnapshot, SpawnError | BackendUnavailableError>;
 	/**
 	 * Wait until all listed subagents are settled. Unknown ids are treated as
 	 * settled (the tool layer validates ids first). While waiting, settles for
@@ -510,6 +496,7 @@ const makeManager = Effect.gen(function* () {
 		backend: BackendName,
 		task: SpawnTask,
 		parentId?: string,
+		options?: SpawnOptions,
 	) => Effect.Effect<SubagentSnapshot, SpawnError | BackendUnavailableError>;
 	let waitForOwned: (ids: ReadonlyArray<string>, onPending?: (pending: string[]) => void, recipientId?: string) => Effect.Effect<void>;
 	let cancelOwned: (ids: ReadonlyArray<string>, recipientId?: string) => Effect.Effect<ReadonlyArray<CancelResult>>;
@@ -576,11 +563,26 @@ const makeManager = Effect.gen(function* () {
 		};
 	};
 
-	spawnOwned = (requestedBackend, requestedTask, parentId) =>
+	spawnOwned = (requestedBackend, requestedTask, parentId, options) =>
 		Effect.gen(function* () {
-			const routed = routeSpawn(requestedBackend, requestedTask);
-			const backendName = routed.backend;
-			const mode = routed.task.mode ?? "worker";
+			const bareModelProviders =
+				requestedTask.model && !requestedTask.model.includes("/")
+					? requestedTask.parent.modelRegistry
+							?.getAll()
+							.filter((model) => model.id === requestedTask.model)
+							.map((model) => model.provider)
+					: undefined;
+			const route = resolveRoute({
+				harness: requestedBackend,
+				model: requestedTask.model,
+				inheritedModel: requestedTask.parent.inheritedModel,
+				bareModelProviders,
+				allowPaidOpencode: options?.allowPaidOpencode,
+			});
+			if ("error" in route) return yield* new SpawnError({ message: route.error });
+			const backendName = route.backend;
+			const routedTask: SpawnTask = { ...requestedTask, model: route.model };
+			const mode = routedTask.mode ?? "worker";
 			if (disposed) {
 				return yield* new SpawnError({ message: "Subagent manager is shutting down." });
 			}
@@ -614,9 +616,9 @@ const makeManager = Effect.gen(function* () {
 				markReady = resolve;
 			});
 			const task: SpawnTask = {
-				...routed.task,
+				...routedTask,
 				mode,
-				orchestration: mode === "orchestrator" ? makeController(id, routed.task, ready) : undefined,
+				orchestration: mode === "orchestrator" ? makeController(id, routedTask, ready) : undefined,
 			};
 			const scope = yield* Scope.make();
 			const session = yield* Scope.provide(backend.spawn(task), scope).pipe(
@@ -683,7 +685,8 @@ const makeManager = Effect.gen(function* () {
 			return entry.snapshot as SubagentSnapshot;
 		});
 
-	const spawn = (requestedBackend: BackendName, requestedTask: SpawnTask) => spawnOwned(requestedBackend, requestedTask);
+	const spawn = (requestedBackend: BackendName, requestedTask: SpawnTask, options?: SpawnOptions) =>
+		spawnOwned(requestedBackend, requestedTask, undefined, options);
 
 	waitForOwned = (ids, onPending, recipientId) =>
 		Effect.suspend(() => {
