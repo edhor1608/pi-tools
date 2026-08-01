@@ -1,12 +1,18 @@
 # pi-tools
 
-`pi-tools` is a focused Pi package with five independent extensions:
+`pi-tools` is a focused Pi package with eleven independent extensions:
 
-- `subagents` runs background Pi and Claude Code agents
-- `statusline` adds a Claude-style footer with context and Codex limit telemetry
+- `subagents` runs background Pi and Claude Code agents with strict model routing
+- `statusline` adds a Claude-style footer with context and Codex limit telemetry, composing statuses published by other extensions
 - `file-footnotes` keeps file-heavy assistant answers readable
 - `stash` stores complete prompts for controlled later release
 - `structured-compaction` preserves continuity in long sessions
+- `review-loop` runs a session-persisted review-fix state machine (`/review-loop`, agent-callable)
+- `lifecycle-failures` appends redacted failed tool calls to `~/memories/tool-failures.jsonl`
+- `memories-sync` commits writes under `~/memories/memory/` with path-scoped git commits
+- `usage-guard` warns and directs wrap-up before Codex subscription limits are exhausted
+- `session-gap` injects a re-orientation briefing after two days of session inactivity
+- `personal-lint` returns personal (non-CI) lint diagnostics for freshly edited JS/TS files
 
 The package is developed and validated against Pi `0.82.1`. See [docs/pi-version-notes.md](docs/pi-version-notes.md) for integration details.
 
@@ -30,7 +36,7 @@ A local checkout also works:
 pi install /absolute/path/to/pi-tools
 ```
 
-The five extensions are exposed separately and can be enabled or disabled through `pi config`.
+The eleven extensions are exposed separately and can be enabled or disabled through `pi config`.
 
 ## Subagents
 
