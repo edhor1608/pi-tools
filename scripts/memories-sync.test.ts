@@ -81,7 +81,7 @@ void test("persistent index lock contention is reported after three attempts", a
 void test("no-change results stay silent while commit failures warn once", () => {
 	const statuses: Array<{ id: string; text: string; tone?: string }> = [];
 	const publishFailure = createMemorySyncFailurePublisher((id, text, options) => {
-		statuses.push({ id, text, tone: options?.tone });
+		statuses.push({ id, text, ...(options?.tone !== undefined ? { tone: options.tone } : {}) });
 	});
 
 	publishFailure("noop");
@@ -96,7 +96,7 @@ void test("non-git memory roots return a distinct result and publish one warning
 	context.after(async () => rm(directory, { recursive: true, force: true }));
 	const statuses: Array<{ id: string; text: string; tone?: string }> = [];
 	const publishFailure = createMemorySyncFailurePublisher((id, text, options) => {
-		statuses.push({ id, text, tone: options?.tone });
+		statuses.push({ id, text, ...(options?.tone !== undefined ? { tone: options.tone } : {}) });
 	});
 
 	const result = await commitMemoryChanges({ repoRoot: directory, basename: "note.md" });

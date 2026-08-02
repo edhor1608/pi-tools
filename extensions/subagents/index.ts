@@ -164,9 +164,9 @@ export default function (pi: ExtensionAPI) {
 	let managerSync: SubagentManagerShape | undefined;
 	const planeParent = () => ({
 		parentCwd: sessionContext?.cwd ?? process.cwd(),
-		inheritedModel: sessionContext?.model ? { provider: sessionContext.model.provider, id: sessionContext.model.id } : undefined,
+		...(sessionContext?.model ? { inheritedModel: { provider: sessionContext.model.provider, id: sessionContext.model.id } } : {}),
 		inheritedThinkingLevel: pi.getThinkingLevel(),
-		modelRegistry: sessionContext?.modelRegistry,
+		...(sessionContext?.modelRegistry !== undefined ? { modelRegistry: sessionContext.modelRegistry } : {}),
 	});
 	const planeToken = claimSubagentPlane({
 		spawn: async (backend: "pi" | "claude", request: { prompt: string; title: string; cwd: string; model?: string }) => {
@@ -178,7 +178,7 @@ export default function (pi: ExtensionAPI) {
 					title: request.title,
 					cwd: request.cwd,
 					mode: "worker",
-					model: request.model,
+					...(request.model !== undefined ? { model: request.model } : {}),
 					parent: planeParent(),
 				}),
 			);
@@ -219,7 +219,7 @@ export default function (pi: ExtensionAPI) {
 					id: snap.id,
 					title: snap.title,
 					status: snap.status,
-					errorText: snap.errorText,
+					...(snap.errorText !== undefined ? { errorText: snap.errorText } : {}),
 					output: truncatedOutput(snap),
 				}),
 				display: true,
@@ -340,23 +340,23 @@ export default function (pi: ExtensionAPI) {
 						prompt: params.prompt,
 						title,
 						cwd,
-						mode: params.mode,
-						model: params.model,
-						reasoningEffort: params.reasoning_effort,
+						...(params.mode !== undefined ? { mode: params.mode } : {}),
+						...(params.model !== undefined ? { model: params.model } : {}),
+						...(params.reasoning_effort !== undefined ? { reasoningEffort: params.reasoning_effort } : {}),
 						parent: {
 							parentCwd: ctx.cwd,
-							inheritedModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+							...(ctx.model ? { inheritedModel: { provider: ctx.model.provider, id: ctx.model.id } } : {}),
 							inheritedThinkingLevel: pi.getThinkingLevel(),
-							modelRegistry: ctx.modelRegistry,
+							...(ctx.modelRegistry !== undefined ? { modelRegistry: ctx.modelRegistry } : {}),
 						},
 					},
 					{
 						userAllowsPaidOpenrouter,
-						allowPaidOpenrouter: params.allowPaidOpenrouter,
+						...(params.allowPaidOpenrouter !== undefined ? { allowPaidOpenrouter: params.allowPaidOpenrouter } : {}),
 						paidOpenrouterConfigPath,
 					},
 				),
-				{ signal, interruptMessage: "Subagent spawn aborted." },
+				{ ...(signal !== undefined ? { signal } : {}), interruptMessage: "Subagent spawn aborted." },
 			);
 
 			return {
@@ -413,7 +413,7 @@ export default function (pi: ExtensionAPI) {
 						details: { pending },
 					});
 				}),
-				{ signal, interruptMessage: "Wait aborted. Subagents keep running." },
+				{ ...(signal !== undefined ? { signal } : {}), interruptMessage: "Wait aborted. Subagents keep running." },
 			);
 
 			// Settlement may have happened before this wait began. Remove any
@@ -482,7 +482,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const report = await runTool(getRuntime(), manager.cancel(ids), {
-				signal,
+				...(signal !== undefined ? { signal } : {}),
 				interruptMessage: "Subagent cancellation aborted.",
 			});
 
@@ -520,7 +520,7 @@ export default function (pi: ExtensionAPI) {
 			const message = params.message.trim();
 			if (!message) throw new Error("Provide a non-empty message.");
 			await runTool(getRuntime(), manager.send(params.id, message), {
-				signal,
+				...(signal !== undefined ? { signal } : {}),
 				interruptMessage: "Subagent steering aborted.",
 			});
 			resultDelivery.consume([params.id]);

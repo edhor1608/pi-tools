@@ -51,9 +51,13 @@ void describe("round-trip", () => {
 	void test("serialization snapshots: later mutations do not leak into the persisted copy", () => {
 		const state = richState();
 		const persisted = serializeReviewLoopState(state);
-		state.findings[0]!.title = "mutated";
-		state.majorFindingHistory[0]!.push("new");
-		assert.equal(persisted.state.findings[0]!.title, "null deref");
+		const finding = state.findings[0];
+		const firstHistoryEntry = state.majorFindingHistory[0];
+		assert.ok(finding);
+		assert.ok(firstHistoryEntry);
+		finding.title = "mutated";
+		firstHistoryEntry.push("new");
+		assert.equal(persisted.state.findings[0]?.title, "null deref");
 		assert.deepEqual(persisted.state.majorFindingHistory, [["off-by-one"]]);
 	});
 });

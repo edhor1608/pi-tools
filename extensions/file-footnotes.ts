@@ -67,28 +67,23 @@ const stripOptionalLinkTitle = (destination: string): string => {
 const parseHashLocation = (hash: string): { line?: number; column?: number } => {
 	const match = /^#L(\d+)(?:C(\d+))?$/.exec(hash);
 	if (!match) return {};
-	return { line: Number(match[1]), column: match[2] ? Number(match[2]) : undefined };
+	const line = Number(match[1]);
+	return match[2] ? { line, column: Number(match[2]) } : { line };
 };
 
 const splitPathLocationSuffix = (href: string): { pathPart: string; suffix: string; line?: number; column?: number } => {
 	const hash = /#L(\d+)(?:C(\d+))?$/.exec(href);
 	if (hash?.index !== undefined) {
-		return {
-			pathPart: href.slice(0, hash.index),
-			suffix: hash[0],
-			line: Number(hash[1]),
-			column: hash[2] ? Number(hash[2]) : undefined,
-		};
+		const pathPart = href.slice(0, hash.index);
+		const line = Number(hash[1]);
+		return hash[2] ? { pathPart, suffix: hash[0], line, column: Number(hash[2]) } : { pathPart, suffix: hash[0], line };
 	}
 	const lastSlash = Math.max(href.lastIndexOf("/"), href.lastIndexOf("\\"));
 	const colon = /:(\d+)(?::(\d+))?$/.exec(href);
 	if (colon && colon.index > lastSlash) {
-		return {
-			pathPart: href.slice(0, colon.index),
-			suffix: colon[0],
-			line: Number(colon[1]),
-			column: colon[2] ? Number(colon[2]) : undefined,
-		};
+		const pathPart = href.slice(0, colon.index);
+		const line = Number(colon[1]);
+		return colon[2] ? { pathPart, suffix: colon[0], line, column: Number(colon[2]) } : { pathPart, suffix: colon[0], line };
 	}
 	return { pathPart: href, suffix: "" };
 };
@@ -109,7 +104,13 @@ const parseFileTarget = (href: string): ParsedFileTarget => {
 		}
 	}
 	const { pathPart, suffix, line, column } = splitPathLocationSuffix(href);
-	return { displayHref: `${pathPart}${suffix}`, filesystemPath: normalizeFilesystemPath(pathPart), line, column };
+	const filesystemPath = normalizeFilesystemPath(pathPart);
+	return {
+		displayHref: `${pathPart}${suffix}`,
+		...(filesystemPath !== undefined ? { filesystemPath } : {}),
+		...(line !== undefined ? { line } : {}),
+		...(column !== undefined ? { column } : {}),
+	};
 };
 
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
@@ -122,15 +123,17 @@ const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
 
 const createFootnoteItem = (href: string, index: number): FileFootnoteItem => {
 	const target = parseFileTarget(href);
+	const openUrl = target.filesystemPath ? pathToFileURL(target.filesystemPath).href : undefined;
+	const vscodeUrl = buildVsCodeUrl(target);
 	return {
 		index,
 		href,
 		displayHref: target.displayHref,
-		filesystemPath: target.filesystemPath,
-		line: target.line,
-		column: target.column,
-		openUrl: target.filesystemPath ? pathToFileURL(target.filesystemPath).href : undefined,
-		vscodeUrl: buildVsCodeUrl(target),
+		...(target.filesystemPath !== undefined ? { filesystemPath: target.filesystemPath } : {}),
+		...(target.line !== undefined ? { line: target.line } : {}),
+		...(target.column !== undefined ? { column: target.column } : {}),
+		...(openUrl !== undefined ? { openUrl } : {}),
+		...(vscodeUrl !== undefined ? { vscodeUrl } : {}),
 	};
 };
 

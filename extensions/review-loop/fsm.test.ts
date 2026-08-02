@@ -54,11 +54,15 @@ function run(
 
 // Factories that fill epoch/opId from the live state (the IO shell does the
 // same by threading effect.epoch/effect.opId into its completion events).
-const on = (owner?: ReviewLoopState["owner"]): ReviewLoopEvent => ({ type: "mode-on", by: "user", owner });
+const on = (owner?: ReviewLoopState["owner"]): ReviewLoopEvent =>
+	owner === undefined ? { type: "mode-on", by: "user" } : { type: "mode-on", by: "user", owner };
 const off: ReviewLoopEvent = { type: "mode-off", by: "user" };
 const settled =
 	(fingerprint: string, stable = true, forced?: boolean): EventInput =>
-	(state) => ({ type: "work-settled", epoch: state.epoch, fingerprint, stable, forced });
+	(state) =>
+		forced === undefined
+			? { type: "work-settled", epoch: state.epoch, fingerprint, stable }
+			: { type: "work-settled", epoch: state.epoch, fingerprint, stable, forced };
 const reviewed =
 	(outcome: ReviewOutcome, currentFingerprint: string): EventInput =>
 	(state) => ({
@@ -81,13 +85,23 @@ const verifyFailed: EventInput = (state) => ({
 });
 const failed =
 	(reason: string): EventInput =>
-	(state) => ({ type: "backend-failure", epoch: state.epoch, opId: state.activeOp?.id, reason });
+	(state) =>
+		state.activeOp === undefined
+			? { type: "backend-failure", epoch: state.epoch, reason }
+			: { type: "backend-failure", epoch: state.epoch, opId: state.activeOp.id, reason };
 
 /** Shared prefix: mode on + settled work + valid review with the given findings. */
 const untilTriage = (findings: Finding[]): EventInput[] => [on(), settled(FP), reviewed(validReview(FP, findings), FP)];
 
 const dispatchReviews = (effects: ReviewLoopEffect[]) =>
 	effects.filter((effect): effect is Extract<ReviewLoopEffect, { type: "dispatch-review" }> => effect.type === "dispatch-review");
+
+/** Simulate a restored session: activeOp never survives a restart, so it must be absent, not `undefined`. */
+const withoutActiveOp = (state: ReviewLoopState): ReviewLoopState => {
+	const restored = { ...state };
+	delete restored.activeOp;
+	return restored;
+};
 
 void describe("mode toggling", () => {
 	void test("mode-on arms the loop, bumps the epoch, and checks the gate", () => {
@@ -182,7 +196,11 @@ void describe("async epoch isolation", () => {
 		const staleEpoch = first.state.epoch;
 		const staleOpId = first.state.activeOp?.id;
 		const second = run([off, on(), settled(FP2)], { from: first.state });
-		const { state } = run([{ type: "backend-failure", epoch: staleEpoch, opId: staleOpId, reason: "old cycle died" }], {
+		const staleFailure: ReviewLoopEvent =
+			staleOpId === undefined
+				? { type: "backend-failure", epoch: staleEpoch, reason: "old cycle died" }
+				: { type: "backend-failure", epoch: staleEpoch, opId: staleOpId, reason: "old cycle died" };
+		const { state } = run([staleFailure], {
 			from: second.state,
 		});
 		assert.notEqual(state.phase, "blocked");
@@ -457,7 +475,7 @@ void describe("resume reconciliation", () => {
 	const resumed: ReviewLoopEvent = { type: "resumed" };
 
 	void test("a pending review re-enters through the gate", () => {
-		const pending: ReviewLoopState = { ...run([on(), settled(FP)]).state, reviewInFlight: false, activeOp: undefined };
+		const pending: ReviewLoopState = withoutActiveOp({ ...run([on(), settled(FP)]).state, reviewInFlight: false });
 		const { state, effects } = run([resumed], { from: pending });
 		assert.equal(state.phase, "reviewing");
 		assert.deepEqual(effects, [{ type: "check-gate", epoch: pending.epoch }]);
@@ -466,7 +484,7 @@ void describe("resume reconciliation", () => {
 	void test("a restored fixing phase re-dispatches the fix batch with a fresh op", () => {
 		const batch = [finding("bug")];
 		const fixing = run([...untilTriage(batch), accepted(batch)]).state;
-		const restored: ReviewLoopState = { ...fixing, activeOp: undefined };
+		const restored: ReviewLoopState = withoutActiveOp(fixing);
 		const { state, effects } = run([resumed], { from: restored });
 		assert.equal(state.phase, "fixing");
 		const fix = effects.find((effect) => effect.type === "dispatch-fix");
@@ -481,7 +499,7 @@ void describe("resume reconciliation", () => {
 	void test("a restored verifying phase re-runs verification against the reviewed fingerprint", () => {
 		const batch = [finding("bug")];
 		const verifying = run([...untilTriage(batch), accepted(batch), fixDone]).state;
-		const restored: ReviewLoopState = { ...verifying, activeOp: undefined };
+		const restored: ReviewLoopState = withoutActiveOp(verifying);
 		const { state, effects } = run([resumed], { from: restored });
 		assert.equal(state.phase, "verifying");
 		const verify = effects.find((effect) => effect.type === "dispatch-verify");

@@ -43,7 +43,7 @@ const triggerCompaction = async (ctx: ExtensionCommandContext, label: string, cu
 	}
 	await new Promise<void>((resolve) => {
 		ctx.compact({
-			customInstructions,
+			...(customInstructions !== undefined ? { customInstructions } : {}),
 			onComplete: () => {
 				if (ctx.hasUI) {
 					ctx.ui.notify(`${label} completed`, "info");
@@ -103,8 +103,9 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 				ctx.ui.notify("No compactions found on the current branch", "info");
 				return;
 			}
+			const sessionFile = ctx.sessionManager.getSessionFile();
 			const options = {
-				sessionFile: ctx.sessionManager.getSessionFile(),
+				...(sessionFile !== undefined ? { sessionFile } : {}),
 				latestOnly: mode !== "all",
 			};
 			pi.appendEntry("structured-compaction-report", {
@@ -136,15 +137,15 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 			firstKeptEntryId: event.preparation.firstKeptEntryId,
 			isSplitTurn: event.preparation.isSplitTurn,
 			tokensBefore: event.preparation.tokensBefore,
-			customInstructions: event.customInstructions,
-			previousSummary: event.preparation.previousSummary,
-			previousArtifact: previousStructuredCompaction?.artifact,
+			...(event.customInstructions !== undefined ? { customInstructions: event.customInstructions } : {}),
+			...(event.preparation.previousSummary !== undefined ? { previousSummary: event.preparation.previousSummary } : {}),
+			...(previousStructuredCompaction?.artifact !== undefined ? { previousArtifact: previousStructuredCompaction.artifact } : {}),
 			messagesToSummarize: event.preparation.messagesToSummarize,
 			turnPrefixMessages: event.preparation.turnPrefixMessages,
 			readFiles,
 			modifiedFiles,
-			reason: event.reason,
-			willRetry: event.willRetry,
+			...(event.reason !== undefined ? { reason: event.reason } : {}),
+			...(event.willRetry !== undefined ? { willRetry: event.willRetry } : {}),
 		};
 
 		try {
@@ -177,7 +178,7 @@ export default function structuredCompactionExtension(pi: ExtensionAPI) {
 					firstKeptEntryId: input.firstKeptEntryId,
 					tokensBefore: input.tokensBefore,
 					estimatedTokensAfter: metrics.afterHeuristic,
-					usage: backendOutput.usage,
+					...(backendOutput.usage !== undefined ? { usage: backendOutput.usage } : {}),
 					details: artifact,
 				},
 			};

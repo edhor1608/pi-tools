@@ -90,7 +90,9 @@ export interface DashboardSelection {
 export function reconcileDashboardSelection(selection: DashboardSelection, subs: ReadonlyArray<Pick<SubagentSnapshot, "id">>) {
 	const stableIndex = selection.id ? subs.findIndex((snap) => snap.id === selection.id) : -1;
 	selection.index = stableIndex >= 0 ? stableIndex : Math.min(Math.max(0, selection.index), Math.max(0, subs.length - 1));
-	selection.id = subs[selection.index]?.id;
+	const nextId = subs[selection.index]?.id;
+	if (nextId !== undefined) selection.id = nextId;
+	else delete selection.id;
 }
 
 class SubagentDashboard implements Component {
@@ -160,7 +162,9 @@ class SubagentDashboard implements Component {
 		if (this.keybindings.matches(data, "tui.select.up") || data === "k") {
 			if (subs.length > 0) {
 				this.selection.index = (this.selection.index - 1 + subs.length) % subs.length;
-				this.selection.id = subs[this.selection.index]?.id;
+				const nextId = subs[this.selection.index]?.id;
+				if (nextId !== undefined) this.selection.id = nextId;
+				else delete this.selection.id;
 				this.tui.requestRender();
 			}
 			return;
@@ -168,7 +172,9 @@ class SubagentDashboard implements Component {
 		if (this.keybindings.matches(data, "tui.select.down") || data === "j") {
 			if (subs.length > 0) {
 				this.selection.index = (this.selection.index + 1) % subs.length;
-				this.selection.id = subs[this.selection.index]?.id;
+				const nextId = subs[this.selection.index]?.id;
+				if (nextId !== undefined) this.selection.id = nextId;
+				else delete this.selection.id;
 				this.tui.requestRender();
 			}
 			return;
@@ -255,6 +261,7 @@ class SubagentDashboard implements Component {
 
 		for (let i = 0; i < visible.length; i++) {
 			const snap = visible[i];
+			if (!snap) continue;
 			const index = start + i;
 			const isSelected = index === this.selection.index;
 
@@ -341,7 +348,7 @@ class TakeoverView implements Component, Focusable {
 		this.id = id;
 		this.view = view;
 		this.done = done;
-		this.options = options;
+		if (options !== undefined) this.options = options;
 		this.unsubscribe = view.subscribeTo(id, () => this.scheduleRender());
 		// Elapsed time in the header ticks along at 1Hz.
 		this.ticker = setInterval(() => this.tui.requestRender(), 1000);
@@ -364,7 +371,7 @@ class TakeoverView implements Component, Focusable {
 		// Streaming can emit an event per token. Limit terminal repaints so this
 		// view cannot starve input handling or make the child look frozen.
 		this.renderTimer = setTimeout(() => {
-			this.renderTimer = undefined;
+			delete this.renderTimer;
 			if (!this.closed) this.tui.requestRender();
 		}, 50);
 	}
@@ -375,7 +382,7 @@ class TakeoverView implements Component, Focusable {
 		this.unsubscribe();
 		clearInterval(this.ticker);
 		if (this.renderTimer) clearTimeout(this.renderTimer);
-		this.renderTimer = undefined;
+		delete this.renderTimer;
 		return true;
 	}
 

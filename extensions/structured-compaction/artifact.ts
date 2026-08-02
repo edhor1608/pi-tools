@@ -44,7 +44,7 @@ export const getLatestStructuredCompactionArtifact = (
 ): { entry: CompactionEntry; artifact: StructuredCompactionArtifact } | undefined => {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
-		if (entry.type !== "compaction") continue;
+		if (!entry || entry.type !== "compaction") continue;
 		if (!isStructuredCompactionArtifact(entry.details)) return undefined;
 		return { entry, artifact: entry.details };
 	}
@@ -70,13 +70,13 @@ export const createStructuredCompactionArtifact = (
 	kind: "structured-replacement-history",
 	summary: backendOutput.summary,
 	displaySummary,
-	metrics,
+	...(metrics !== undefined ? { metrics } : {}),
 	replacementMessages,
 	readFiles: input.readFiles,
 	modifiedFiles: input.modifiedFiles,
 	backend: {
 		kind: backendOutput.kind,
-		model: backendOutput.backendModel,
+		...(backendOutput.backendModel !== undefined ? { model: backendOutput.backendModel } : {}),
 	},
 	renderer: {
 		kind: config.renderer.kind,
@@ -87,10 +87,10 @@ export const createStructuredCompactionArtifact = (
 		tokensBefore: input.tokensBefore,
 		compactedMessageCount: input.messagesToSummarize.length,
 		turnPrefixMessageCount: input.turnPrefixMessages.length,
-		previousArtifactVersion: input.previousArtifact?.version,
-		reason: input.reason,
-		willRetry: input.willRetry,
+		...(input.previousArtifact?.version !== undefined ? { previousArtifactVersion: input.previousArtifact.version } : {}),
+		...(input.reason !== undefined ? { reason: input.reason } : {}),
+		...(input.willRetry !== undefined ? { willRetry: input.willRetry } : {}),
 	},
-	remoteReplacement: backendOutput.remoteReplacement,
-	metadata: backendOutput.metadata,
+	...(backendOutput.remoteReplacement !== undefined ? { remoteReplacement: backendOutput.remoteReplacement } : {}),
+	...(backendOutput.metadata !== undefined ? { metadata: backendOutput.metadata } : {}),
 });

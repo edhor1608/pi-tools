@@ -113,7 +113,7 @@ export function parseReviewOutcome(raw: string, expectedFingerprint: string): Re
 			id: `f${index + 1}`,
 			title: candidate.title,
 			severity: candidate.severity,
-			detail: typeof candidate.detail === "string" ? candidate.detail : undefined,
+			...(typeof candidate.detail === "string" ? { detail: candidate.detail } : {}),
 		});
 	}
 	// Verdict/findings must agree in BOTH directions; anything else is garbled.

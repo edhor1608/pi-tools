@@ -194,14 +194,19 @@ export function initialState(): ReviewLoopState {
 }
 
 export function cloneState(state: ReviewLoopState): ReviewLoopState {
-	return {
+	const next: ReviewLoopState = {
 		...state,
-		activeOp: state.activeOp ? { ...state.activeOp } : undefined,
 		owner: { ...state.owner },
-		reviewer: state.reviewer ? { ...state.reviewer } : undefined,
 		findings: state.findings.map((finding) => ({ ...finding })),
 		majorFindingHistory: state.majorFindingHistory.map((round) => [...round]),
 	};
+	// activeOp/reviewer are optional-and-absent-when-unset (exactOptionalPropertyTypes):
+	// clear via `delete`, never `= undefined`, so the field is genuinely missing.
+	if (state.activeOp) next.activeOp = { ...state.activeOp };
+	else delete next.activeOp;
+	if (state.reviewer) next.reviewer = { ...state.reviewer };
+	else delete next.reviewer;
+	return next;
 }
 
 /**
@@ -233,22 +238,21 @@ function beginOp(draft: ReviewLoopState, kind: OpKind): number {
 }
 
 function armed(state: ReviewLoopState): ReviewLoopState {
-	return {
-		...cloneState(state),
-		phase: "armed",
-		epoch: state.epoch + 1,
-		activeOp: undefined,
-		round: 0,
-		invalidRetries: 0,
-		fixAttempts: 0,
-		fingerprint: undefined,
-		reviewInFlight: false,
-		reviewer: undefined,
-		findings: [],
-		majorFindingHistory: [],
-		blockedReason: undefined,
-		hardStopReason: undefined,
-	};
+	const next = cloneState(state);
+	next.phase = "armed";
+	next.epoch = state.epoch + 1;
+	delete next.activeOp;
+	next.round = 0;
+	next.invalidRetries = 0;
+	next.fixAttempts = 0;
+	delete next.fingerprint;
+	next.reviewInFlight = false;
+	delete next.reviewer;
+	next.findings = [];
+	next.majorFindingHistory = [];
+	delete next.blockedReason;
+	delete next.hardStopReason;
+	return next;
 }
 
 function startRound(state: ReviewLoopState, fingerprint: string, kind: "initial" | "re-review"): TransitionResult {
@@ -258,7 +262,7 @@ function startRound(state: ReviewLoopState, fingerprint: string, kind: "initial"
 	next.fingerprint = fingerprint;
 	next.reviewInFlight = true;
 	next.invalidRetries = 0;
-	next.blockedReason = undefined;
+	delete next.blockedReason;
 	if (kind === "initial") {
 		next.findings = [];
 		next.majorFindingHistory = [];
@@ -323,7 +327,7 @@ function handleReviewCompleted(
 	if (!state.reviewInFlight || !matchesOp(state, event, "review")) return noChange(state);
 	const next = cloneState(state);
 	next.reviewInFlight = false;
-	next.activeOp = undefined;
+	delete next.activeOp;
 	if (event.reviewer) next.reviewer = event.reviewer;
 
 	// Fingerprint mismatch: the target moved (or the reviewer reviewed the
@@ -331,7 +335,7 @@ function handleReviewCompleted(
 	// again. This is NEVER a pass and does not consume an invalid retry.
 	const mismatch = event.outcome.fingerprint !== state.fingerprint || event.currentFingerprint !== state.fingerprint;
 	if (mismatch) {
-		next.fingerprint = undefined;
+		delete next.fingerprint;
 		return { state: next, effects: [{ type: "check-gate", epoch: next.epoch }] };
 	}
 
@@ -403,7 +407,7 @@ function handleVerify(
 ): TransitionResult {
 	if (state.phase !== "verifying" || !matchesOp(state, event, "verify")) return noChange(state);
 	const next = cloneState(state);
-	next.activeOp = undefined;
+	delete next.activeOp;
 	if (event.type === "verify-failed") {
 		next.fixAttempts += 1;
 		if (next.fixAttempts > config.maxFixAttempts) {
@@ -431,7 +435,7 @@ function handleVerify(
 	next.reviewInFlight = false;
 	// The fix changed the tree: the old fingerprint is dead. The gate must
 	// observe a NEW stable fingerprint before the re-review dispatches.
-	next.fingerprint = undefined;
+	delete next.fingerprint;
 	return { state: next, effects: [{ type: "check-gate", epoch: next.epoch }] };
 }
 
@@ -523,7 +527,7 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 			const next = cloneState(state);
 			next.phase = "blocked";
 			next.reviewInFlight = false;
-			next.activeOp = undefined;
+			delete next.activeOp;
 			next.blockedReason = event.reason;
 			return { state: next, effects: [] };
 		}
@@ -533,7 +537,7 @@ export function transition(state: ReviewLoopState, event: ReviewLoopEvent, confi
 			next.phase = "hard-stop";
 			next.hardStopReason = "round-limit";
 			next.reviewInFlight = false;
-			next.activeOp = undefined;
+			delete next.activeOp;
 			return { state: next, effects: [] };
 		}
 		case "resumed":

@@ -75,8 +75,8 @@ const resolveSummaryModelAndAuth = async (
 				model: attempt.model,
 				modelRef: attempt.modelRef,
 				apiKey: auth.apiKey,
-				headers: auth.headers,
-				env: auth.env,
+				...(auth.headers !== undefined ? { headers: auth.headers } : {}),
+				...(auth.env !== undefined ? { env: auth.env } : {}),
 			};
 		}
 	}
@@ -131,8 +131,8 @@ const runPiModelSummary = async (input: StructuredCompactionInput, runtime: Back
 		},
 		{
 			apiKey,
-			headers,
-			env,
+			...(headers !== undefined ? { headers } : {}),
+			...(env !== undefined ? { env } : {}),
 			maxTokens: config.backend.maxTokens,
 			signal,
 			sessionId: randomUUID(),
@@ -211,7 +211,7 @@ const codexRemoteBackend: CompactionBackend = {
 			summary: summaryResult.summary,
 			backendModel: `${model.provider}/${model.id}`,
 			remoteReplacement,
-			usage: summaryResult.usage,
+			...(summaryResult.usage !== undefined ? { usage: summaryResult.usage } : {}),
 			metadata: {
 				...summaryResult.metadata,
 				remoteApi: remoteReplacement.api,

@@ -44,7 +44,7 @@ export default function personalLintExtension(pi: ExtensionAPI) {
 
 			const message = await lintPersonalFile(filePath, async (target) => {
 				const result = await pi.exec(lintScript, [target], {
-					signal: ctx.signal,
+					...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
 					timeout: PERSONAL_LINT_TIMEOUT_MS,
 				});
 				if (result.code !== 0 || result.killed || result.stderr.trim()) return undefined;

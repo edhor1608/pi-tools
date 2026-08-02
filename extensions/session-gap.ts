@@ -26,7 +26,8 @@ export function checkSessionGapOnce(
 	now: number,
 ): { state: SessionGapCheckState; gap?: SessionGap } {
 	if (state.checked) return { state };
-	return { state: { checked: true }, gap: computeSessionGap(timestamps, now) };
+	const gap = computeSessionGap(timestamps, now);
+	return gap !== undefined ? { state: { checked: true }, gap } : { state: { checked: true } };
 }
 
 export function buildSessionGapAlert(gap: Pick<SessionGap, "days" | "hours">): string {

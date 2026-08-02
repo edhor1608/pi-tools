@@ -170,6 +170,6 @@ export default function lifecycleFailuresExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
-		if (primaryState.owner === instanceToken) primaryState.owner = undefined;
+		if (primaryState.owner === instanceToken) delete primaryState.owner;
 	});
 }

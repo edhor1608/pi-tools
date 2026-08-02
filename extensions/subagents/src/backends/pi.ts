@@ -222,14 +222,15 @@ function assistantParts(msg: AssistantMessage): TranscriptPart[] {
 			parts.push({
 				type: "thinking",
 				text: part.redacted ? "" : part.thinking,
-				redacted: part.redacted,
+				...(part.redacted !== undefined ? { redacted: part.redacted } : {}),
 			});
 		} else if (part.type === "toolCall") {
+			const argsPreview = safeJson(part.arguments);
 			parts.push({
 				type: "toolCall",
 				toolId: part.id,
 				name: part.name,
-				argsPreview: safeJson(part.arguments),
+				...(argsPreview !== undefined ? { argsPreview } : {}),
 			});
 		}
 	}
@@ -278,8 +279,8 @@ const makePiSession = (task: SpawnTask): Effect.Effect<SubagentSession, SpawnErr
 					sessionManager: SessionManager.create(task.cwd),
 					settingsManager,
 					resourceLoader: loader,
-					model,
-					thinkingLevel,
+					...(model !== undefined ? { model } : {}),
+					...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
 					excludeTools: [...CHILD_EXCLUDED_TOOL_NAMES],
 				});
 				// Start child extension session hooks/resources in headless mode.
@@ -328,18 +329,19 @@ const makePiSession = (task: SpawnTask): Effect.Effect<SubagentSession, SpawnErr
 			const m = activeModel();
 			return {
 				backend: "pi",
-				modelLabel: m ? `${m.provider}/${m.id}` : undefined,
-				contextWindow: m?.contextWindow,
-				sessionFilePath: session.sessionFile,
+				...(m !== undefined ? { modelLabel: `${m.provider}/${m.id}` } : {}),
+				...(m?.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+				...(session.sessionFile !== undefined ? { sessionFilePath: session.sessionFile } : {}),
 			};
 		};
 
 		const emitUsage = () => {
 			const usage = session.getContextUsage();
+			const contextWindow = activeModel()?.contextWindow ?? usage?.contextWindow;
 			emit({
 				_tag: "UsageChanged",
-				tokens: usage?.tokens ?? undefined,
-				contextWindow: activeModel()?.contextWindow ?? usage?.contextWindow,
+				...(usage?.tokens != null ? { tokens: usage.tokens } : {}),
+				...(contextWindow !== undefined ? { contextWindow } : {}),
 			});
 		};
 
@@ -351,19 +353,19 @@ const makePiSession = (task: SpawnTask): Effect.Effect<SubagentSession, SpawnErr
 			if (last?.stopReason === "aborted") {
 				emit({
 					_tag: "RunSettled",
-					outcome: { _tag: "Interrupted", partialText },
+					outcome: partialText !== undefined ? { _tag: "Interrupted", partialText } : { _tag: "Interrupted" },
 				});
 				return;
 			}
 			const errorText = state.runError ?? (last?.stopReason === "error" ? (last.errorMessage ?? "Run failed") : undefined);
 			if (errorText !== undefined) {
+				const boundedErrorText = boundedError(errorText);
 				emit({
 					_tag: "RunSettled",
-					outcome: {
-						_tag: "Failed",
-						errorText: boundedError(errorText),
-						partialText,
-					},
+					outcome:
+						partialText !== undefined
+							? { _tag: "Failed", errorText: boundedErrorText, partialText }
+							: { _tag: "Failed", errorText: boundedErrorText },
 				});
 				return;
 			}
@@ -415,30 +417,36 @@ const makePiSession = (task: SpawnTask): Effect.Effect<SubagentSession, SpawnErr
 					// toolResult messages are covered by tool_execution_end.
 					break;
 				}
-				case "tool_execution_start":
+				case "tool_execution_start": {
+					const argsPreview = safeJson(event.args);
 					emit({
 						_tag: "ToolStart",
 						toolId: event.toolCallId,
 						name: event.toolName,
-						argsPreview: safeJson(event.args),
+						...(argsPreview !== undefined ? { argsPreview } : {}),
 					});
 					break;
-				case "tool_execution_update":
+				}
+				case "tool_execution_update": {
+					const outputPreview = toolPreview(event.partialResult);
 					emit({
 						_tag: "ToolUpdate",
 						toolId: event.toolCallId,
-						outputPreview: toolPreview(event.partialResult),
+						...(outputPreview !== undefined ? { outputPreview } : {}),
 					});
 					break;
-				case "tool_execution_end":
+				}
+				case "tool_execution_end": {
+					const outputPreview = toolPreview(event.result);
 					emit({
 						_tag: "ToolEnd",
 						toolId: event.toolCallId,
 						name: event.toolName,
 						isError: event.isError,
-						outputPreview: toolPreview(event.result),
+						...(outputPreview !== undefined ? { outputPreview } : {}),
 					});
 					break;
+				}
 				case "queue_update":
 					emit({
 						_tag: "QueueChanged",

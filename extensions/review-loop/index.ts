@@ -248,12 +248,15 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 	let generation = 0;
 
 	const getReviewerBackend = () =>
-		(reviewerBackend ??= createSubagentReviewerBackend(() => ({
-			parentCwd: sessionContext?.cwd ?? process.cwd(),
-			inheritedModel: sessionContext?.model ? { provider: sessionContext.model.provider, id: sessionContext.model.id } : undefined,
-			inheritedThinkingLevel: pi.getThinkingLevel(),
-			modelRegistry: sessionContext?.modelRegistry,
-		})));
+		(reviewerBackend ??= createSubagentReviewerBackend(() => {
+			const inheritedModel = sessionContext?.model ? { provider: sessionContext.model.provider, id: sessionContext.model.id } : undefined;
+			return {
+				parentCwd: sessionContext?.cwd ?? process.cwd(),
+				...(inheritedModel !== undefined ? { inheritedModel } : {}),
+				inheritedThinkingLevel: pi.getThinkingLevel(),
+				...(sessionContext?.modelRegistry !== undefined ? { modelRegistry: sessionContext.modelRegistry } : {}),
+			};
+		}));
 
 	/** Project trust gates execution of project-config commands (finding: untrusted verifyCommand). */
 	const isTrusted = () => sessionContext?.isProjectTrusted() ?? false;
@@ -354,7 +357,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		const producerModelId =
 			state.owner.kind === "subagent" ? (getSubagentPlane()?.get(state.owner.id)?.meta.modelLabel ?? ctx.model?.id) : ctx.model?.id;
 		const routing = pickReviewerRouting({
-			workProducerModelId: producerModelId,
+			...(producerModelId !== undefined ? { workProducerModelId: producerModelId } : {}),
 			preferDifferentFamily: true,
 			nonClaudeModel: settings.nonClaudeReviewerModel,
 		});
@@ -363,10 +366,15 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			title: `review-loop r${effect.round} (${effect.kind})`,
 			cwd: ctx.cwd,
 			backend: routing.backend,
-			model: routing.model,
+			...(routing.model !== undefined ? { model: routing.model } : {}),
 		});
 		if (generation !== gen || result.cancelled) return;
-		const reviewer = { backend: routing.backend, model: result.modelLabel ?? routing.model, subagentId: result.subagentId };
+		const reviewerModel = result.modelLabel ?? routing.model;
+		const reviewer = {
+			backend: routing.backend,
+			...(reviewerModel !== undefined ? { model: reviewerModel } : {}),
+			...(result.subagentId !== undefined ? { subagentId: result.subagentId } : {}),
+		};
 		if (!result.ok) {
 			// Backend failure blocks VISIBLY. Never fall back to another provider.
 			apply({
@@ -430,7 +438,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		// live mutable snapshot, so a turn that starts and settles while send()
 		// resolves would otherwise already be reflected in the baseline and
 		// waitForNewTurn would miss it and time out.
-		const preSend = { settledAt: baseline.settledAt, turns: baseline.turns };
+		const preSend = { ...(baseline.settledAt !== undefined ? { settledAt: baseline.settledAt } : {}), turns: baseline.turns };
 		try {
 			await plane.send(ownerId, instruction);
 			// send() to a SETTLED owner starts the new turn asynchronously; an
@@ -507,10 +515,14 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		void reviewerBackend?.cancelActive();
 	};
 
+	// owner is optional-and-absent-when-unset (exactOptionalPropertyTypes): never pass `owner: undefined`.
+	const modeOnEvent = (by: "user" | "agent", owner?: FixOwner): ReviewLoopEvent =>
+		owner === undefined ? { type: "mode-on", by } : { type: "mode-on", by, owner };
+
 	const handleAction = (action: Action, by: "user" | "agent", owner?: FixOwner): string => {
 		switch (action) {
 			case "on":
-				apply({ type: "mode-on", by, owner });
+				apply(modeOnEvent(by, owner));
 				return "Review loop enabled. It reviews automatically once work settles.";
 			case "off":
 				teardownInFlight();
@@ -520,7 +532,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 				// An owner passed while already active updates the fix lineage on
 				// an armed/blocked loop (FSM rule); it never retargets an
 				// in-flight op mid-round.
-				if (!isModeOn(state) || owner) apply({ type: "mode-on", by, owner });
+				if (!isModeOn(state) || owner) apply(modeOnEvent(by, owner));
 				void runGateCheck(true);
 				return "Gate check triggered; a review starts if the target is stable.";
 			case "status":

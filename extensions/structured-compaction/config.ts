@@ -107,8 +107,8 @@ export const loadStructuredCompactionPrompts = async (
 
 	return {
 		system,
-		systemPath,
+		...(systemPath !== undefined ? { systemPath } : {}),
 		compact,
-		compactPath,
+		...(compactPath !== undefined ? { compactPath } : {}),
 	};
 };

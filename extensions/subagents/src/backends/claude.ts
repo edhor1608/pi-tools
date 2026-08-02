@@ -195,11 +195,12 @@ function assistantParts(message: SDKAssistantMessage): TranscriptPart[] {
 		} else if (block.type === "redacted_thinking") {
 			parts.push({ type: "thinking", text: "", redacted: true });
 		} else if (block.type === "tool_use") {
+			const argsPreview = safeJson(block.input);
 			parts.push({
 				type: "toolCall",
 				toolId: block.id,
 				name: block.name,
-				argsPreview: safeJson(block.input),
+				...(argsPreview !== undefined ? { argsPreview } : {}),
 			});
 		}
 	}
@@ -276,6 +277,16 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			Queue.offerUnsafe(events, event);
 		};
 
+		// Annotated as the full SubagentMeta (not narrowed to this literal) so updateMeta's
+		// Partial<SubagentMeta> patches — which may add sessionFilePath/nativeSessionId — merge cleanly.
+		const initialMeta: SubagentMeta = {
+			backend: "claude",
+			...(task.model !== undefined ? { modelLabel: task.model } : {}),
+			// Claude models used by this backend currently expose 200k context;
+			// result.modelUsage replaces this fallback when the CLI knows better.
+			contextWindow: CLAUDE_CONTEXT_WINDOW,
+		};
+
 		const state = {
 			closed: false,
 			activeRun: false,
@@ -289,13 +300,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			liveText: "",
 			tools: new Map<string, string>(),
 			settleWaiters: new Set<() => void>(),
-			meta: {
-				backend: "claude",
-				modelLabel: task.model,
-				// Claude models used by this backend currently expose 200k context;
-				// result.modelUsage replaces this fallback when the CLI knows better.
-				contextWindow: CLAUDE_CONTEXT_WINDOW,
-			} satisfies SubagentMeta as SubagentMeta,
+			meta: initialMeta,
 		};
 
 		const thinkingBudget = task.reasoningEffort ? THINKING_BUDGETS[task.reasoningEffort] : undefined;
@@ -339,6 +344,16 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 		};
 
 		const partialText = () => state.liveText || state.currentText || undefined;
+		// partialText is optional-and-absent-when-unset (exactOptionalPropertyTypes): build the
+		// RunOutcome variant so the key is omitted rather than set to `undefined`.
+		const interruptedOutcome = (): RunOutcome => {
+			const text = partialText();
+			return text !== undefined ? { _tag: "Interrupted", partialText: text } : { _tag: "Interrupted" };
+		};
+		const failedOutcome = (errorText: string): RunOutcome => {
+			const text = partialText();
+			return text !== undefined ? { _tag: "Failed", errorText, partialText: text } : { _tag: "Failed", errorText };
+		};
 
 		const settle = (outcome: RunOutcome) => {
 			if (!state.activeRun) return;
@@ -398,11 +413,12 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			for (const block of message.message.content) {
 				if (block.type !== "tool_use") continue;
 				state.tools.set(block.id, block.name);
+				const argsPreview = safeJson(block.input);
 				emit({
 					_tag: "ToolStart",
 					toolId: block.id,
 					name: block.name,
-					argsPreview: safeJson(block.input),
+					...(argsPreview !== undefined ? { argsPreview } : {}),
 				});
 			}
 		};
@@ -414,12 +430,13 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 				if (block.type !== "tool_result") continue;
 				const name = state.tools.get(block.tool_use_id) ?? "Tool";
 				state.tools.delete(block.tool_use_id);
+				const preview = outputPreview(block.content);
 				emit({
 					_tag: "ToolEnd",
 					toolId: block.tool_use_id,
 					name,
 					isError: block.is_error ?? false,
-					outputPreview: outputPreview(block.content),
+					...(preview !== undefined ? { outputPreview: preview } : {}),
 				});
 			}
 			// External prompts are emitted synchronously by submit(); ignoring text
@@ -431,16 +448,17 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			// contextOccupancyTokens); only the capacity is trustworthy here. The
 			// occupancy itself was already emitted by the last assistant message.
 			const contextWindow = resultContextWindow(result);
+			const effectiveContextWindow = contextWindow ?? state.meta.contextWindow ?? CLAUDE_CONTEXT_WINDOW;
 			emit({
 				_tag: "UsageChanged",
-				contextWindow: contextWindow ?? state.meta.contextWindow,
+				contextWindow: effectiveContextWindow,
 			});
 			if (contextWindow !== undefined && contextWindow !== state.meta.contextWindow) {
 				updateMeta({ contextWindow });
 			}
 
 			if (state.interruptRequested) {
-				settle({ _tag: "Interrupted", partialText: partialText() });
+				settle(interruptedOutcome());
 			} else if (result.subtype === "success") {
 				settle({
 					_tag: "Completed",
@@ -449,11 +467,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			} else {
 				const details =
 					result.errors.filter((error) => error.trim()).join("\n") || result.stop_reason || `Claude Code ended with ${result.subtype}`;
-				settle({
-					_tag: "Failed",
-					errorText: boundedError(details),
-					partialText: partialText(),
-				});
+				settle(failedOutcome(boundedError(details)));
 			}
 		};
 
@@ -512,15 +526,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 			} finally {
 				if (!state.closed) {
 					if (state.activeRun) {
-						settle(
-							state.interruptRequested
-								? { _tag: "Interrupted", partialText: partialText() }
-								: {
-										_tag: "Failed",
-										errorText: failure ?? "Claude Code query ended unexpectedly",
-										partialText: partialText(),
-									},
-						);
+						settle(state.interruptRequested ? interruptedOutcome() : failedOutcome(failure ?? "Claude Code query ended unexpectedly"));
 					} else if (failure) {
 						emit({ _tag: "BackendError", message: failure });
 					}
@@ -537,7 +543,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 				// once closed, and every run must end in a RunSettled even when the
 				// scope closes mid-run.
 				if (state.activeRun) {
-					settle({ _tag: "Interrupted", partialText: partialText() });
+					settle(interruptedOutcome());
 				}
 				state.closed = true;
 				input.end();
@@ -635,7 +641,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 					// Covers pre-init/pending races and SDK versions that acknowledge an
 					// interrupt without delivering a result. Force-close after settling
 					// so a late native result cannot resurrect or re-settle this run.
-					settle({ _tag: "Interrupted", partialText: partialText() });
+					settle(interruptedOutcome());
 					state.closed = true;
 					input.end();
 					abortController.abort();

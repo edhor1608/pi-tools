@@ -68,7 +68,12 @@ export function decideUsageGuard(
 		freshWindows.push(window);
 		changed = true;
 	}
-	return { level: freshWindows.length > 0 ? level : undefined, windows: freshWindows, latches: nextLatches, changed };
+	return {
+		...(freshWindows.length > 0 ? { level } : {}),
+		windows: freshWindows,
+		latches: nextLatches,
+		changed,
+	};
 }
 
 export function buildUsageGuardDirective(
@@ -239,7 +244,7 @@ async function readStoredCodexCredential(): Promise<CodexCredential | undefined>
 
 function extractCodexAccountId(token: string): string | undefined {
 	const parts = token.split(".");
-	if (parts.length !== 3) return undefined;
+	if (parts.length !== 3 || !parts[1]) return undefined;
 	try {
 		const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
 		if (!isObject(payload) || !isObject(payload[JWT_CLAIM_PATH])) return undefined;

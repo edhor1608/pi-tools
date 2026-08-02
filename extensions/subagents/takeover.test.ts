@@ -5,8 +5,8 @@ import { reconcileDashboardSelection, type DashboardSelection } from "./src/ui/t
 
 await test("subagent trees render parent-first without changing sibling order", () => {
 	const ordered = orderSubagentTree([
-		{ id: "root-1", parentId: undefined },
-		{ id: "root-2", parentId: undefined },
+		{ id: "root-1" },
+		{ id: "root-2" },
 		{ id: "child-1", parentId: "root-1" },
 		{ id: "grandchild", parentId: "child-1" },
 		{ id: "child-2", parentId: "root-1" },
@@ -43,5 +43,7 @@ await test("dashboard selection follows its subagent id and falls back by row", 
 	assert.deepEqual(selection, { id: "sa-2", index: 1 });
 
 	reconcileDashboardSelection(selection, []);
-	assert.deepEqual(selection, { id: undefined, index: 0 });
+	// exactOptionalPropertyTypes: an empty subs list means no selectable id, so the
+	// key is deleted rather than set to undefined (see reconcileDashboardSelection).
+	assert.deepEqual(selection, { index: 0 });
 });

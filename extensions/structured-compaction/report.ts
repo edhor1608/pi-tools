@@ -24,7 +24,11 @@ const formatNumber = (value: number): string => value.toLocaleString("en-US");
 const selectStructuredCompactionReportItems = (
 	items: StructuredCompactionReportItem[],
 	options?: StructuredCompactionReportFormatOptions,
-): StructuredCompactionReportItem[] => (options?.latestOnly ? [items[items.length - 1]] : items);
+): StructuredCompactionReportItem[] => {
+	if (!options?.latestOnly) return items;
+	const latest = items[items.length - 1];
+	return latest ? [latest] : [];
+};
 
 const formatSavedSummary = (item: StructuredCompactionReportItem): string =>
 	`${formatNumber(item.metrics.savedHeuristic)} (${item.metrics.reductionPercent.toFixed(1)}%)`;
@@ -75,29 +79,33 @@ export const buildStructuredCompactionReport = (entries: SessionEntry[], leafId?
 				.reverse()
 				.find((pathEntry) => pathEntry.type === "message" && pathEntry.message.role === "assistant");
 			const firstAssistantAfter = afterEntries.find((pathEntry) => pathEntry.type === "message" && pathEntry.message.role === "assistant");
+			const providerBefore =
+				lastAssistantBefore?.type === "message" && lastAssistantBefore.message.role === "assistant"
+					? {
+							total: lastAssistantBefore.message.usage.totalTokens,
+							input: lastAssistantBefore.message.usage.input,
+							cacheRead: lastAssistantBefore.message.usage.cacheRead,
+						}
+					: undefined;
+			const providerAfter =
+				firstAssistantAfter?.type === "message" && firstAssistantAfter.message.role === "assistant"
+					? {
+							total: firstAssistantAfter.message.usage.totalTokens,
+							input: firstAssistantAfter.message.usage.input,
+							cacheRead: firstAssistantAfter.message.usage.cacheRead,
+						}
+					: undefined;
+			const lastAssistantBeforeText = lastAssistantBefore ? assistantText(lastAssistantBefore) : undefined;
+			const firstAssistantAfterText = firstAssistantAfter ? assistantText(firstAssistantAfter) : undefined;
 			return {
 				entry,
-				artifact,
+				...(artifact !== undefined ? { artifact } : {}),
 				metrics,
 				backendKind: artifact?.backend.kind ?? "unknown",
-				providerBefore:
-					lastAssistantBefore?.type === "message" && lastAssistantBefore.message.role === "assistant"
-						? {
-								total: lastAssistantBefore.message.usage.totalTokens,
-								input: lastAssistantBefore.message.usage.input,
-								cacheRead: lastAssistantBefore.message.usage.cacheRead,
-							}
-						: undefined,
-				providerAfter:
-					firstAssistantAfter?.type === "message" && firstAssistantAfter.message.role === "assistant"
-						? {
-								total: firstAssistantAfter.message.usage.totalTokens,
-								input: firstAssistantAfter.message.usage.input,
-								cacheRead: firstAssistantAfter.message.usage.cacheRead,
-							}
-						: undefined,
-				lastAssistantBeforeText: lastAssistantBefore ? assistantText(lastAssistantBefore) : undefined,
-				firstAssistantAfterText: firstAssistantAfter ? assistantText(firstAssistantAfter) : undefined,
+				...(providerBefore !== undefined ? { providerBefore } : {}),
+				...(providerAfter !== undefined ? { providerAfter } : {}),
+				...(lastAssistantBeforeText !== undefined ? { lastAssistantBeforeText } : {}),
+				...(firstAssistantAfterText !== undefined ? { firstAssistantAfterText } : {}),
 			};
 		});
 };
@@ -143,6 +151,9 @@ export const formatStructuredCompactionReportPreview = (
 	const header = options?.sessionFile ? [`Session: ${options.sessionFile}`, ""] : [];
 	if (options?.latestOnly) {
 		const item = selected[0];
+		// selectStructuredCompactionReportItems only returns [] when `items` (checked non-empty above) is empty,
+		// so with latestOnly it always yields exactly one item here.
+		if (!item) return [...header, "Latest compaction unavailable"].join("\n");
 		return [
 			...header,
 			`Latest compaction${items.length > 1 ? ` (1 of ${items.length})` : ""}`,

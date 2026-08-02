@@ -146,6 +146,7 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 
 	const settledResult = (settled: SubagentSnapshot | undefined, cancelled: boolean): ReviewerRunResult => {
 		if (!settled) return { ok: false, raw: "", error: "reviewer disappeared from the subagent registry" };
+		const modelLabel = settled.meta.modelLabel;
 		if (cancelled || settled.status === "error") {
 			return {
 				ok: false,
@@ -153,10 +154,10 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 				error: cancelled ? "reviewer cancelled" : (settled.errorText ?? "reviewer failed"),
 				cancelled,
 				subagentId: settled.id,
-				modelLabel: settled.meta.modelLabel,
+				...(modelLabel !== undefined ? { modelLabel } : {}),
 			};
 		}
-		return { ok: true, raw: settled.finalText, subagentId: settled.id, modelLabel: settled.meta.modelLabel };
+		return { ok: true, raw: settled.finalText, subagentId: settled.id, ...(modelLabel !== undefined ? { modelLabel } : {}) };
 	};
 
 	const runViaPlane = async (plane: SubagentPlane, request: ReviewRequest): Promise<ReviewerRunResult> => {
@@ -165,7 +166,7 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 			prompt: request.prompt,
 			title: request.title,
 			cwd: request.cwd,
-			model: request.model,
+			...(request.model !== undefined ? { model: request.model } : {}),
 		});
 		if (cancelSeq !== spawnedAtCancelSeq) {
 			await plane.cancel([snap.id]).catch(() => undefined);
@@ -192,7 +193,7 @@ export function createSubagentReviewerBackend(getSpawnContext: () => ReviewerSpa
 				title: request.title,
 				cwd: request.cwd,
 				mode: "worker",
-				model: request.model,
+				...(request.model !== undefined ? { model: request.model } : {}),
 				parent: getSpawnContext(),
 			}),
 			{ interruptMessage: "Reviewer spawn aborted." },

@@ -84,7 +84,8 @@ export default function statuslineExtension(pi: ExtensionAPI): void {
 		if (ctx.model?.provider === "openai-codex") {
 			const limits = limitsFromHeaders(event.headers, Date.now());
 			if (limits.length > 0) {
-				cache = { ...cache, limits, lastError: undefined };
+				cache = { ...cache, limits };
+				delete cache.lastError;
 				writeCache(cache);
 			}
 		}
@@ -275,7 +276,8 @@ async function doRefreshCodexUsage(ctx: PiContext): Promise<void> {
 			const payload = await fetchCodexUsageWithPython(credential);
 			const usage = codexUsageFromResponse(payload, Date.now());
 			if (!usage) throw new Error("Codex usage response did not include a primary rate-limit window");
-			cache = { ...cache, codexUsage: usage, lastError: undefined };
+			cache = { ...cache, codexUsage: usage };
+			delete cache.lastError;
 			writeCache(cache);
 			return;
 		} catch (error) {
@@ -343,10 +345,11 @@ export function codexUsageFromResponse(payload: unknown, now: number): CodexUsag
 		? (numberValue(payload.rate_limit_reset_credits.applicable_available_count) ??
 			numberValue(payload.rate_limit_reset_credits.available_count))
 		: undefined;
+	const planType = typeof payload.plan_type === "string" ? payload.plan_type : undefined;
 	return {
 		windows: windows.sort((a, b) => (a.windowSeconds ?? Number.MAX_SAFE_INTEGER) - (b.windowSeconds ?? Number.MAX_SAFE_INTEGER)),
-		planType: typeof payload.plan_type === "string" ? payload.plan_type : undefined,
-		creditsAvailable: credits,
+		...(planType !== undefined ? { planType } : {}),
+		...(credits !== undefined ? { creditsAvailable: credits } : {}),
 		fetchedAt: now,
 	};
 }
@@ -360,8 +363,8 @@ function windowFromResponse(value: unknown): CodexUsageWindow | undefined {
 	return {
 		label: codexWindowLabel(windowSeconds),
 		usedPercent: Math.max(0, Math.min(100, Math.round(usedPercent))),
-		resetAt: resetAtSeconds ? resetAtSeconds * 1000 : undefined,
-		windowSeconds,
+		...(resetAtSeconds ? { resetAt: resetAtSeconds * 1000 } : {}),
+		...(windowSeconds !== undefined ? { windowSeconds } : {}),
 	};
 }
 
@@ -384,11 +387,12 @@ function limitsFromHeaders(headers: Record<string, string | string[] | undefined
 		const limit = parseNumber(get(`x-ratelimit-limit-${name}`));
 		const remaining = parseNumber(get(`x-ratelimit-remaining-${name}`));
 		if (!limit || remaining === undefined) continue;
+		const resetAt = parseReset(get(`x-ratelimit-reset-${name}`), now);
 		buckets.push({
 			name,
 			limit,
 			remaining,
-			resetAt: parseReset(get(`x-ratelimit-reset-${name}`), now),
+			...(resetAt !== undefined ? { resetAt } : {}),
 			observedAt: now,
 		});
 	}
@@ -439,10 +443,12 @@ function refreshLocation(cwd: string): Promise<void> | undefined {
 	const fallback = locationCache?.cwd === cwd ? locationCache : { cwd, dir: basename(cwd), dirty: false, checkedAt: now };
 	const refresh = loadLocation(cwd)
 		.then((location) => {
-			locationCache = { ...location, refresh: undefined };
+			locationCache = { ...location };
+			delete locationCache.refresh;
 		})
 		.catch(() => {
-			locationCache = { ...fallback, checkedAt: Date.now(), refresh: undefined };
+			locationCache = { ...fallback, checkedAt: Date.now() };
+			delete locationCache.refresh;
 		})
 		.finally(() => requestRender?.());
 	locationCache = { ...fallback, refresh };
@@ -498,7 +504,7 @@ function parseReset(value: string | undefined, now: number): number | undefined 
 	const numeric = Number(trimmed);
 	if (Number.isFinite(numeric)) return numeric > 10_000_000_000 ? numeric : numeric * 1000;
 	const relative = trimmed.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/i);
-	if (relative) {
+	if (relative?.[1] && relative[2]) {
 		const amount = Number(relative[1]);
 		const unit = relative[2].toLowerCase();
 		const factor = unit === "ms" ? 1 : unit === "s" ? 1000 : unit === "m" ? 60_000 : 3_600_000;
@@ -545,7 +551,7 @@ function getHeader(headers: Record<string, string> | undefined, name: string): s
 
 function extractCodexAccountId(token: string): string | undefined {
 	const parts = token.split(".");
-	if (parts.length !== 3) return undefined;
+	if (parts.length !== 3 || !parts[1]) return undefined;
 	try {
 		const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
 		if (!isObject(payload)) return undefined;

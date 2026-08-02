@@ -63,7 +63,8 @@ function resolvedModelForRouting(task: SpawnTask) {
 		if (found) return { provider: found.provider, id: found.id };
 	}
 	const matches = registry.getAll().filter((model) => model.id === task.model);
-	return matches.length === 1 ? { provider: matches[0]!.provider, id: matches[0]!.id } : undefined;
+	const onlyMatch = matches.length === 1 ? matches[0] : undefined;
+	return onlyMatch ? { provider: onlyMatch.provider, id: onlyMatch.id } : undefined;
 }
 
 function nestedResultMessage(snap: SubagentSnapshot) {
@@ -311,7 +312,7 @@ const makeManager = Effect.gen(function* () {
 		switch (outcome._tag) {
 			case "Completed":
 				s.status = "done";
-				s.errorText = undefined;
+				delete s.errorText;
 				s.finalText = outcome.finalText.slice(0, FINAL_TEXT_MAX_LENGTH);
 				break;
 			case "Failed":
@@ -326,7 +327,7 @@ const makeManager = Effect.gen(function* () {
 				s.finalText = (outcome.partialText ?? "").slice(0, FINAL_TEXT_MAX_LENGTH);
 				break;
 		}
-		s.liveAssistant = undefined;
+		delete s.liveAssistant;
 		entry.liveToolMap.clear();
 		s.liveTools = [];
 		s.queued = [];
@@ -360,7 +361,7 @@ const makeManager = Effect.gen(function* () {
 		entry.startingTurn = true;
 		s.status = "running";
 		s.waitingForChildren = false;
-		s.settledAt = undefined;
+		delete s.settledAt;
 		if (restarted) onStarted?.(s.id);
 		notify(s.id);
 		const message = pending.map((delivery) => delivery.message).join("\n\n---\n\n");
@@ -380,7 +381,7 @@ const makeManager = Effect.gen(function* () {
 		);
 		entry.deliveryFiber = fiber;
 		fiber.addObserver(() => {
-			if (entry.deliveryFiber === fiber) entry.deliveryFiber = undefined;
+			if (entry.deliveryFiber === fiber) delete entry.deliveryFiber;
 		});
 	};
 
@@ -397,8 +398,8 @@ const makeManager = Effect.gen(function* () {
 				}
 				s.status = "running";
 				s.waitingForChildren = false;
-				s.settledAt = undefined;
-				s.errorText = undefined;
+				delete s.settledAt;
+				delete s.errorText;
 				if (restarted) onStarted?.(s.id);
 				break;
 			}
@@ -409,7 +410,7 @@ const makeManager = Effect.gen(function* () {
 					s.finalText = event.outcome.finalText.slice(0, FINAL_TEXT_MAX_LENGTH);
 					if (hasPendingDeliveries(s.id) || activeDescendants.length > 0) {
 						s.waitingForChildren = true;
-						s.liveAssistant = undefined;
+						delete s.liveAssistant;
 						entry.liveToolMap.clear();
 						s.liveTools = [];
 						s.queued = [];
@@ -445,57 +446,63 @@ const makeManager = Effect.gen(function* () {
 			case "AssistantMessage":
 				appendTranscript(s, {
 					kind: "assistant",
-					parts: event.parts.map((part) =>
-						part.type === "toolCall"
-							? {
-									...part,
-									argsPreview: part.argsPreview ? boundedTranscriptText(part.argsPreview) : undefined,
-								}
-							: { ...part, text: boundedTranscriptText(part.text) },
-					),
+					parts: event.parts.map((part) => {
+						if (part.type !== "toolCall") return { ...part, text: boundedTranscriptText(part.text) };
+						const { argsPreview, ...rest } = part;
+						const boundedArgsPreview = argsPreview ? boundedTranscriptText(argsPreview) : undefined;
+						return boundedArgsPreview !== undefined ? { ...rest, argsPreview: boundedArgsPreview } : rest;
+					}),
 				});
-				s.liveAssistant = undefined;
+				delete s.liveAssistant;
 				s.turns++;
 				break;
-			case "ToolStart":
+			case "ToolStart": {
+				const argsPreview = event.argsPreview ? boundedTranscriptText(event.argsPreview) : undefined;
 				entry.liveToolMap.set(event.toolId, {
 					toolId: event.toolId,
 					name: event.name,
-					argsPreview: event.argsPreview ? boundedTranscriptText(event.argsPreview) : undefined,
+					...(argsPreview !== undefined ? { argsPreview } : {}),
 				});
 				s.liveTools = [...entry.liveToolMap.values()];
 				break;
+			}
 			case "ToolUpdate": {
 				const current = entry.liveToolMap.get(event.toolId);
 				if (current) {
+					const outputPreview = event.outputPreview ? boundedTranscriptText(event.outputPreview) : current.outputPreview;
 					entry.liveToolMap.set(event.toolId, {
 						...current,
-						outputPreview: event.outputPreview ? boundedTranscriptText(event.outputPreview) : current.outputPreview,
+						...(outputPreview !== undefined ? { outputPreview } : {}),
 					});
 					s.liveTools = [...entry.liveToolMap.values()];
 				}
 				break;
 			}
-			case "ToolEnd":
+			case "ToolEnd": {
 				entry.liveToolMap.delete(event.toolId);
 				s.liveTools = [...entry.liveToolMap.values()];
+				const outputPreview = event.outputPreview ? boundedTranscriptText(event.outputPreview) : undefined;
 				appendTranscript(s, {
 					kind: "toolResult",
 					toolId: event.toolId,
 					name: event.name,
 					isError: event.isError,
-					outputPreview: event.outputPreview ? boundedTranscriptText(event.outputPreview) : undefined,
+					...(outputPreview !== undefined ? { outputPreview } : {}),
 				});
 				break;
+			}
 			case "QueueChanged":
 				s.queued = event.queued;
 				break;
-			case "UsageChanged":
+			case "UsageChanged": {
+				const tokens = event.tokens ?? s.usage.tokens;
+				const contextWindow = event.contextWindow ?? s.usage.contextWindow;
 				s.usage = {
-					tokens: event.tokens ?? s.usage.tokens,
-					contextWindow: event.contextWindow ?? s.usage.contextWindow,
+					...(tokens !== undefined ? { tokens } : {}),
+					...(contextWindow !== undefined ? { contextWindow } : {}),
 				};
 				break;
+			}
 			case "MetaChanged":
 				s.meta = { ...s.meta, ...event.meta };
 				break;
@@ -548,9 +555,9 @@ const makeManager = Effect.gen(function* () {
 							prompt: request.prompt,
 							title: request.title.trim().slice(0, 160) || "subagent",
 							cwd,
-							mode: request.mode,
-							model: request.model,
-							reasoningEffort: request.reasoningEffort,
+							...(request.mode !== undefined ? { mode: request.mode } : {}),
+							...(request.model !== undefined ? { model: request.model } : {}),
+							...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
 							parent: ownerTask.parent,
 						},
 						ownerId,
@@ -593,20 +600,25 @@ const makeManager = Effect.gen(function* () {
 							.filter((model) => model.id === requestedTask.model)
 							.map((model) => model.provider)
 					: undefined;
+			const resolvedModel = resolvedModelForRouting(requestedTask);
 			const route = resolveRoute({
 				harness: requestedBackend,
-				model: requestedTask.model,
-				inheritedModel: requestedTask.parent.inheritedModel,
-				resolvedModel: resolvedModelForRouting(requestedTask),
-				bareModelProviders,
-				userAllowsPaidOpenrouter: options?.userAllowsPaidOpenrouter,
-				allowPaidOpenrouter: options?.allowPaidOpenrouter,
-				paidOpenrouterConfigPath: options?.paidOpenrouterConfigPath,
+				...(requestedTask.model !== undefined ? { model: requestedTask.model } : {}),
+				...(requestedTask.parent.inheritedModel !== undefined ? { inheritedModel: requestedTask.parent.inheritedModel } : {}),
+				...(resolvedModel !== undefined ? { resolvedModel } : {}),
+				...(bareModelProviders !== undefined ? { bareModelProviders } : {}),
+				...(options?.userAllowsPaidOpenrouter !== undefined ? { userAllowsPaidOpenrouter: options.userAllowsPaidOpenrouter } : {}),
+				...(options?.allowPaidOpenrouter !== undefined ? { allowPaidOpenrouter: options.allowPaidOpenrouter } : {}),
+				...(options?.paidOpenrouterConfigPath !== undefined ? { paidOpenrouterConfigPath: options.paidOpenrouterConfigPath } : {}),
 				nestedSpawn: parentId !== undefined,
 			});
 			if ("error" in route) return yield* new SpawnError({ message: route.error });
 			const backendName = route.backend;
-			const routedTask: SpawnTask = { ...requestedTask, model: route.model };
+			const { model: _requestedModel, ...requestedTaskWithoutModel } = requestedTask;
+			const routedTask: SpawnTask = {
+				...requestedTaskWithoutModel,
+				...(route.model !== undefined ? { model: route.model } : {}),
+			};
 			const mode = routedTask.mode ?? "worker";
 			if (disposed) {
 				return yield* new SpawnError({ message: "Subagent manager is shutting down." });
@@ -643,7 +655,7 @@ const makeManager = Effect.gen(function* () {
 			const task: SpawnTask = {
 				...routedTask,
 				mode,
-				orchestration: mode === "orchestrator" ? makeController(id, routedTask, ready) : undefined,
+				...(mode === "orchestrator" ? { orchestration: makeController(id, routedTask, ready) } : {}),
 			};
 			const scope = yield* Scope.make();
 			const session = yield* Scope.provide(backend.spawn(task), scope).pipe(
@@ -667,7 +679,7 @@ const makeManager = Effect.gen(function* () {
 			const entry: Entry = {
 				snapshot: {
 					id,
-					parentId,
+					...(parentId !== undefined ? { parentId } : {}),
 					depth,
 					mode,
 					backend: backendName,
@@ -678,7 +690,7 @@ const makeManager = Effect.gen(function* () {
 					waitingForChildren: false,
 					createdAt: Date.now(),
 					meta,
-					usage: { contextWindow: meta.contextWindow },
+					usage: meta.contextWindow !== undefined ? { contextWindow: meta.contextWindow } : {},
 					transcript: [],
 					liveTools: [],
 					queued: [],
@@ -744,7 +756,7 @@ const makeManager = Effect.gen(function* () {
 			entry.cancelling = true;
 			if (entry.deliveryFiber) {
 				const deliveryFiber = entry.deliveryFiber;
-				entry.deliveryFiber = undefined;
+				delete entry.deliveryFiber;
 				yield* Fiber.interrupt(deliveryFiber);
 				entry.startingTurn = false;
 				settle(entry, { _tag: "Interrupted" });

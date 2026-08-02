@@ -81,7 +81,7 @@ const resolveResponsesCompactEndpoint = (
 
 const decodeJwtPayload = (token: string): Record<string, unknown> | undefined => {
 	const parts = token.split(".");
-	if (parts.length !== 3) return undefined;
+	if (parts.length !== 3 || !parts[1]) return undefined;
 	try {
 		const json = Buffer.from(parts[1], "base64url").toString("utf8");
 		const parsed = JSON.parse(json);
@@ -167,14 +167,14 @@ export const resolveCodexRemoteAuth = async (
 		}
 		return {
 			apiKey: auth.apiKey,
-			headers: auth.headers,
+			...(auth.headers !== undefined ? { headers: auth.headers } : {}),
 			authMode: "codex-jwt",
 			accountId,
 		};
 	}
 	return {
 		apiKey: auth.apiKey,
-		headers: auth.headers,
+		...(auth.headers !== undefined ? { headers: auth.headers } : {}),
 		authMode: "api-key",
 	};
 };
@@ -184,7 +184,7 @@ export const convertAgentMessagesToResponsesInput = async (model: Model<Api>, me
 	const convertResponsesMessages = await loadResponsesConverter();
 	const converted: unknown = convertResponsesMessages(
 		model,
-		{ systemPrompt: "", messages: convertToLlm(messages), tools: undefined },
+		{ systemPrompt: "", messages: convertToLlm(messages) },
 		OPENAI_TOOL_CALL_PROVIDERS,
 		{ includeSystemPrompt: false },
 	);
@@ -247,6 +247,6 @@ export const requestCodexRemoteCompaction = async (
 		sessionId,
 		promptCacheKey,
 		outputItems: json.output,
-		usage: isJsonValue(json.usage) ? json.usage : undefined,
+		...(isJsonValue(json.usage) ? { usage: json.usage } : {}),
 	};
 };
