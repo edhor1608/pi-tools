@@ -11,7 +11,7 @@ Each child is headless, has its own context window, cannot see the parent conver
 
 Use `pi` by default. A Pi child inherits the parent model and thinking level unless `model` or `reasoning_effort` is supplied. Models are addressed as `provider/model-id` when ambiguity is possible.
 
-Claude-family models from supported providers always run through the `claude` harness. If a spawn requests `harness: "pi"` with a Claude model such as `openrouter/anthropic/claude-fable-5` or the Claude Code alias `fable`, the extension routes it to Claude Code and drops any provider prefix. This also applies when a Pi spawn would inherit a Claude model from its parent. Retired OpenCode references are rejected before Claude routing.
+Claude-family models from supported providers always run through the `claude` harness. Rating-table keys are translated centrally to executable Claude Code aliases: `fable-5` → `fable`, `opus-5` → `opus`, and `sonnet-5` → `sonnet`. If a spawn requests `harness: "pi"` with one of these keys, a Claude model such as `openrouter/anthropic/claude-fable-5`, or a native Claude Code alias, the extension routes it to Claude Code and drops any provider prefix. This also applies when a Pi spawn would inherit a Claude model from its parent. Retired OpenCode references are rejected before Claude routing.
 
 Use `claude` when the user asks for Claude Code or an independent Claude perspective is useful. Omit `model` and `reasoning_effort` to preserve Claude Code's current defaults. Claude requires the local Claude Code executable to be installed and authenticated.
 

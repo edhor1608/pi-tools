@@ -18,6 +18,17 @@ await test("Claude-family models always route to Claude Code and lose provider p
 	);
 });
 
+await test("model-picking keys map to executable Claude Code aliases", () => {
+	for (const [requested, executable] of [
+		["fable-5", "fable"],
+		["opus-5", "opus"],
+		["sonnet-5", "sonnet"],
+	] as const) {
+		assert.deepEqual(resolveRoute({ harness: "pi", model: requested }), { backend: "claude", model: executable });
+		assert.deepEqual(resolveRoute({ harness: "claude", model: requested }), { backend: "claude", model: executable });
+	}
+});
+
 await test("the Claude harness rejects explicitly requested non-Claude models", () => {
 	const route = resolveRoute({ harness: "claude", model: "openai-codex/gpt-5.6-sol" });
 	assert.ok("error" in route);

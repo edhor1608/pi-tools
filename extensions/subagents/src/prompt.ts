@@ -25,7 +25,7 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
 	workingDir: "Working directory for the autonomous child (default: current working directory)",
 	mode: '"worker" for a leaf agent (default), or "orchestrator" to give a Claude session direct host-managed delegation controls.',
 	model:
-		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Paid OpenRouter requires an explicit openrouter/model-id root request; OpenCode providers are retired. Claude-family hints and the fable/haiku/opus/sonnet aliases auto-route to Claude Code and drop any provider prefix. Omit for the harness default; pi inherits the current model.',
+		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Claude rating keys map to executable aliases: fable-5→fable, opus-5→opus, sonnet-5→sonnet. Paid OpenRouter requires an explicit openrouter/model-id root request; OpenCode providers are retired. Claude-family hints and the fable/haiku/opus/sonnet aliases auto-route to Claude Code and drop any provider prefix. Omit for the harness default; pi inherits the current model.',
 	reasoningEffort:
 		"Reasoning effort on a shared scale, mapped to Pi thinking levels or Claude thinking budgets. Omit for the harness default; pi inherits the current level.",
 };
@@ -94,7 +94,7 @@ export function buildSubagentResultMessage(options: {
 }) {
 	const verb = options.status === "error" ? "failed" : "finished";
 	let text = `Subagent ${options.id} "${options.title}" ${verb}.`;
-	if (options.errorText) text += `\nError: ${options.errorText}`;
+	if (options.errorText !== undefined && options.errorText.length > 0) text += `\nError: ${options.errorText}`;
 	text += `\n\n${options.output}`;
 	return text;
 }

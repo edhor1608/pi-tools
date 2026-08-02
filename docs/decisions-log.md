@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-08-02 Separate Claude Rating Keys From Runtime Aliases
+
+### Context
+
+The model-picking table names Claude models by stable rating keys such as `fable-5`, while Claude Code accepts executable aliases such as `fable`. Passing the rating key through unchanged caused the Claude backend to reject it; retrying through Pi failed because the key is not a registered Pi model either.
+
+### Decision
+
+Keep the rating keys and translate them centrally in the subagent routing policy: `fable-5` → `fable`, `opus-5` → `opus`, and `sonnet-5` → `sonnet`. Apply this normalization regardless of the requested harness before the backend starts. Keep native Claude Code aliases and explicit `claude-*` model ids working as before; unknown names remain errors.
+
+### Rationale
+
+The rating table can retain explicit, stable model identities without leaking its vocabulary into backend APIs. A single runtime mapping prevents prompts, skills, and callers from each implementing their own translation.
+
+### Consequences
+
+Callers may pass either a documented rating key or a native Claude Code alias. Adding or renaming a rated Claude model requires updating the central mapping and its routing tests.
+
 ## 2026-08-02 OpenRouter Replaces OpenCode For Paid Specialists
 
 ### Context

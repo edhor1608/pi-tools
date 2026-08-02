@@ -81,7 +81,7 @@ await test("stub subagent completes and delivers a final result", async () => {
 		const snap = await runTool(runtime, manager.spawn("claude", task("Say hello to the tests")));
 		assert.equal(snap.status, "running");
 		assert.equal(snap.backend, "claude");
-		assert.ok(snap.meta.sessionFilePath);
+		assert.ok(snap.meta.sessionFilePath !== undefined && snap.meta.sessionFilePath.length > 0);
 
 		await runTool(runtime, manager.waitFor([snap.id]));
 		const done = manager.view.get(snap.id);
@@ -187,6 +187,21 @@ await test("Claude Code model aliases requested through Pi route to Claude Code"
 			const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: requested }));
 			assert.equal(snap.backend, "claude");
 			assert.equal(snap.meta.modelLabel, requested.split("/").at(-1));
+			await runTool(runtime, manager.cancel([snap.id]));
+		}
+	});
+});
+
+await test("model-picking keys reach Claude Code as executable aliases", async () => {
+	await withManager(async (manager, runtime) => {
+		for (const [requested, executable] of [
+			["fable-5", "fable"],
+			["opus-5", "opus"],
+			["sonnet-5", "sonnet"],
+		] as const) {
+			const snap = await runTool(runtime, manager.spawn("claude", { ...task("review this"), model: requested }));
+			assert.equal(snap.backend, "claude");
+			assert.equal(snap.meta.modelLabel, executable);
 			await runTool(runtime, manager.cancel([snap.id]));
 		}
 	});

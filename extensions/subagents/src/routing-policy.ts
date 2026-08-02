@@ -2,6 +2,13 @@ import type { BackendName } from "./domain.ts";
 
 const CLAUDE_MODEL_ALIASES = new Set(["fable", "haiku", "opus", "sonnet"]);
 
+/** Stable rating-table keys mapped to the aliases accepted by Claude Code. */
+const CLAUDE_MODEL_KEY_ALIASES = new Map<string, string>([
+	["fable-5", "fable"],
+	["opus-5", "opus"],
+	["sonnet-5", "sonnet"],
+]);
+
 type ModelReference = { readonly provider: string; readonly id: string };
 
 export interface RoutingRequest {
@@ -21,6 +28,8 @@ export type RouteResolution = { readonly backend: BackendName; readonly model: s
 function claudeModel(model: string) {
 	const id = model.split("/").at(-1) ?? model;
 	const lower = id.toLowerCase();
+	const mappedAlias = CLAUDE_MODEL_KEY_ALIASES.get(lower);
+	if (mappedAlias !== undefined) return mappedAlias;
 	return /^claude(?:-|$)/.test(lower) || CLAUDE_MODEL_ALIASES.has(lower) ? id : undefined;
 }
 
@@ -65,16 +74,16 @@ function paidOpenRouterGateError(
 ) {
 	const literalProvider = providerFromReference(model);
 	const qualifiedModel = paidModel ? canonicalModel(paidModel) : isPaidOpenRouterProvider(literalProvider) ? model : `openrouter/${model}`;
-	if (request.nestedSpawn) {
+	if (request.nestedSpawn === true) {
 		return `OpenRouter model "${qualifiedModel}" is paid and unavailable for nested subagent spawns by policy.`;
 	}
 	if (!providerQualified) {
 		return `OpenRouter model "${qualifiedModel}" is paid and requires an explicit provider-qualified model such as "${qualifiedModel}".`;
 	}
-	if (!request.userAllowsPaidOpenrouter) {
+	if (request.userAllowsPaidOpenrouter !== true) {
 		return `OpenRouter is paid and disabled; Jonas must enable allowPaidOpenrouter in ${request.paidOpenrouterConfigPath ?? "~/.pi/agent/pi-tools.json"}.`;
 	}
-	return request.allowPaidOpenrouter
+	return request.allowPaidOpenrouter === true
 		? undefined
 		: `OpenRouter model "${qualifiedModel}" is paid; this spawn also requires spawn-time allowPaidOpenrouter: true.`;
 }
@@ -89,13 +98,14 @@ function resolveBareModel(request: RoutingRequest, model: string): RouteResoluti
 		const nativeProviders = providers.filter((provider) => !isPaidOpenRouterProvider(provider) && !isRetiredOpenCodeProvider(provider));
 		const inheritedNative = nativeProviders.find((provider) => provider.toLowerCase() === request.inheritedModel?.provider.toLowerCase());
 		const nativeProvider = inheritedNative ?? (nativeProviders.length === 1 ? nativeProviders[0] : undefined);
-		if (nativeProvider) return { backend: "pi", model: `${nativeProvider}/${model}` };
+		if (nativeProvider !== undefined) return { backend: "pi", model: `${nativeProvider}/${model}` };
 		if (nativeProviders.length > 1) {
 			return {
 				error: `Model "${model}" is available from multiple native providers (${nativeProviders.join(", ")}). Use a provider-qualified model id.`,
 			};
 		}
-		if (retiredProviders[0]) return { error: retiredOpenCodeError(retiredProviders[0]) };
+		const retiredProvider = retiredProviders[0];
+		if (retiredProvider !== undefined) return { error: retiredOpenCodeError(retiredProvider) };
 		return {
 			error: paidOpenRouterGateError(
 				request,
@@ -119,7 +129,7 @@ function resolveBareModel(request: RoutingRequest, model: string): RouteResoluti
 }
 
 export function resolveRoute(request: RoutingRequest): RouteResolution {
-	if (request.model) {
+	if (request.model !== undefined && request.model.length > 0) {
 		const literalProvider = providerFromReference(request.model);
 		const resolvedModel = request.resolvedModel;
 		const retiredProvider =
@@ -128,10 +138,10 @@ export function resolveRoute(request: RoutingRequest): RouteResolution {
 				: isRetiredOpenCodeProvider(literalProvider)
 					? literalProvider
 					: undefined;
-		if (retiredProvider) return { error: retiredOpenCodeError(retiredProvider) };
+		if (retiredProvider !== undefined) return { error: retiredOpenCodeError(retiredProvider) };
 
 		const claude = claudeModel(request.model);
-		if (claude) return { backend: "claude", model: claude };
+		if (claude !== undefined) return { backend: "claude", model: claude };
 		if (request.harness === "claude") {
 			return {
 				error: `Model "${request.model}" is not a Claude-family model and cannot run through the Claude backend. Use harness "pi".`,
@@ -157,7 +167,7 @@ export function resolveRoute(request: RoutingRequest): RouteResolution {
 				: undefined;
 		if (paidModel) {
 			const gateError = paidOpenRouterGateError(request, request.model, paidModel, isPaidOpenRouterProvider(literalProvider));
-			return gateError
+			return gateError !== undefined
 				? { error: gateError }
 				: { backend: "pi", model: request.resolvedModel ? canonicalModel(request.resolvedModel) : canonicalModel(paidModel) };
 		}
@@ -173,7 +183,7 @@ export function resolveRoute(request: RoutingRequest): RouteResolution {
 			return { error: retiredOpenCodeError(request.inheritedModel.provider) };
 		}
 		const claude = claudeModel(request.inheritedModel.id);
-		if (claude) return { backend: "claude", model: claude };
+		if (claude !== undefined) return { backend: "claude", model: claude };
 		const paidInherited = isPaidOpenRouterProvider(request.resolvedModel?.provider)
 			? request.resolvedModel
 			: isPaidOpenRouterProvider(request.inheritedModel.provider)
