@@ -1,5 +1,25 @@
 # Decisions Log
 
+## 2026-08-01 External Session Transcript Migration
+
+### Context
+
+Claude Code and Codex keep structured local session histories, but Pi can only resume native Pi session files. Jonas wants to discover those external sessions from Pi and continue their work without returning to the originating harness.
+
+### Decision
+
+Add an external-session importer that discovers Claude Code and Codex sessions and migrates a selected transcript into a new native Pi session. `/resume-external` is the primary combined picker; `/resume-claude` and `/resume-codex` are source-filtered aliases.
+
+Preserve user and assistant conversation content. Normalize external tool calls and results into provider-independent transcript representations rather than replaying their raw protocol objects as Pi tool calls. Retain provenance such as source harness, original session id and file, working directory, model, and import time as non-contextual Pi session metadata. The source session remains unchanged.
+
+### Rationale
+
+A native Pi session integrates with Pi's existing resume, tree, compaction, naming, and model-switching behavior. Normalized tool activity keeps the imported context valid across providers and changing external schemas, while provenance preserves traceability. This provides substantially more continuity than a summary-only handoff without the fragility of treating foreign files as writable Pi sessions.
+
+### Consequences
+
+Migration creates a snapshot rather than a live two-way sync. Exact external UI events, hidden reasoning, permissions, and provider-specific tool semantics may not survive, although their useful visible output should. Import adapters and fixtures are required separately for Claude Code and Codex, and repeated imports need an explicit duplicate/re-import policy before implementation.
+
 ## 2026-08-01 Pi-Native Personal Agent System
 
 ### Context
