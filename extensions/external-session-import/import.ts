@@ -102,6 +102,7 @@ export const importConversation = (
 	if (conversation.sourceModel !== undefined) provenance.sourceModel = conversation.sourceModel;
 	sessionManager.appendCustomEntry("external-import", provenance);
 	sessionManager.appendSessionInfo(sessionName(conversation));
+	sessionManager.appendModelChange(modelIdentity.provider, modelIdentity.modelId);
 
 	let messageCount = 0;
 	let toolCallCount = 0;

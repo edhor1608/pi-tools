@@ -77,7 +77,7 @@ void describe("importConversation", () => {
 		const entries = sessionManager.getEntries();
 		assert.deepEqual(
 			entries.map((entry) => entry.type),
-			["custom", "session_info", "message", "message", "custom", "custom_message", "message"],
+			["custom", "session_info", "model_change", "message", "message", "custom", "custom_message", "message"],
 		);
 		assert.equal(entries[0]?.type, "custom");
 		if (entries[0]?.type === "custom") {
@@ -93,19 +93,24 @@ void describe("importConversation", () => {
 				skippedRecords: 2,
 			});
 		}
-		assert.equal(entries[4]?.type, "custom");
-		if (entries[4]?.type === "custom") {
-			assert.equal(entries[4].customType, "external-import:tools");
-			assert.deepEqual(entries[4].data, {
+		assert.equal(entries[2]?.type, "model_change");
+		if (entries[2]?.type === "model_change") {
+			assert.equal(entries[2].provider, MODEL_IDENTITY.provider);
+			assert.equal(entries[2].modelId, MODEL_IDENTITY.modelId);
+		}
+		assert.equal(entries[5]?.type, "custom");
+		if (entries[5]?.type === "custom") {
+			assert.equal(entries[5].customType, "external-import:tools");
+			assert.deepEqual(entries[5].data, {
 				version: 1,
 				turnIndex: 0,
 				toolCalls: FIXTURE_TOOL_CALLS,
 			});
 		}
-		assert.equal(entries[5]?.type, "custom_message");
-		if (entries[5]?.type === "custom_message") {
-			assert.equal(entries[5].customType, "external-import:tool-summary");
-			assert.equal(entries[5].display, true);
+		assert.equal(entries[6]?.type, "custom_message");
+		if (entries[6]?.type === "custom_message") {
+			assert.equal(entries[6].customType, "external-import:tool-summary");
+			assert.equal(entries[6].display, true);
 		}
 
 		const assistantEntries = entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant");
@@ -135,5 +140,36 @@ void describe("importConversation", () => {
 			llmMessages.some((message) => message.role === "user" && JSON.stringify(message.content).includes("[Imported tool activity")),
 			true,
 		);
+	});
+
+	void test("persists model identity for a user-only transcript", () => {
+		const sessionManager = SessionManager.inMemory("/synthetic/user-only-target");
+		const conversation: NormalizedConversation = {
+			source: "codex",
+			sourceSessionId: "user-only-source",
+			sourcePath: "/synthetic/user-only.jsonl",
+			skippedRecords: 0,
+			events: [{ kind: "user", text: "Only a user message", timestamp: 100 }],
+		};
+
+		assert.deepEqual(importConversation(sessionManager, conversation, MODEL_IDENTITY, 200), {
+			messageCount: 1,
+			toolCallCount: 0,
+		});
+		const entries = sessionManager.getEntries();
+		assert.deepEqual(
+			entries.map((entry) => entry.type),
+			["custom", "session_info", "model_change", "message"],
+		);
+		const modelChange = entries[2];
+		assert.equal(modelChange?.type, "model_change");
+		if (modelChange?.type === "model_change") {
+			assert.equal(modelChange.provider, MODEL_IDENTITY.provider);
+			assert.equal(modelChange.modelId, MODEL_IDENTITY.modelId);
+		}
+		assert.deepEqual(sessionManager.buildSessionContext().model, {
+			provider: MODEL_IDENTITY.provider,
+			modelId: MODEL_IDENTITY.modelId,
+		});
 	});
 });
