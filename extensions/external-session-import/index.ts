@@ -3,12 +3,12 @@ import { homedir } from "node:os";
 import { basename } from "node:path";
 import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { CancellableLoader, Container, Text } from "@earendil-works/pi-tui";
-import { filterExternalSessions, listExternalSessions, readSessionMetadata } from "./discover.ts";
-import { importConversation, type ExternalImportProvenance, type ExternalImportTools } from "./import.ts";
+import { ExternalSessionPageScanner, listExternalSessions } from "./discover.ts";
+import { importConversation, type ExternalImportProvenance, type ExternalImportTools, type ModelIdentity } from "./import.ts";
 import { ClaudeParser } from "./parse-claude.ts";
 import { CodexParser, parseCodexLegacyFile } from "./parse-codex.ts";
 import { parseJsonlStream } from "./stream.ts";
-import { ImportAbortedError, PAGE_SIZE, capText, compactInline, type ExternalSessionRef, type NormalizedConversation } from "./types.ts";
+import { ImportAbortedError, capText, compactInline, type ExternalSessionRef, type NormalizedConversation } from "./types.ts";
 
 const formatBytes = (bytes: number): string => {
 	if (bytes < 1024) return `${bytes}B`;
@@ -50,25 +50,22 @@ const pickSession = async (
 		return undefined;
 	}
 	const discovered = await listExternalSessions({ homedir: homedir(), ...(source === undefined ? {} : { source }) });
-	const sessions = filterExternalSessions(discovered, filter);
-	if (sessions.length === 0) {
-		ctx.ui.notify(filter.trim() ? "No matching external sessions found" : "No external sessions found", "warning");
-		return undefined;
-	}
-
-	for (let offset = 0; offset < sessions.length; offset += PAGE_SIZE) {
-		const page = await Promise.all(sessions.slice(offset, offset + PAGE_SIZE).map(readSessionMetadata));
-		const labels = pickerLabels(page);
-		const hasMore = offset + PAGE_SIZE < sessions.length;
-		const options = hasMore ? [...labels, "→ older…"] : labels;
+	const scanner = new ExternalSessionPageScanner(discovered, filter);
+	while (true) {
+		const page = await scanner.nextPage();
+		if (page.sessions.length === 0) {
+			ctx.ui.notify(filter.trim() ? "No matching external sessions found" : "No external sessions found", "warning");
+			return undefined;
+		}
+		const labels = pickerLabels(page.sessions);
+		const options = page.hasMore ? [...labels, "→ older…"] : labels;
 		const selected = await ctx.ui.select("Resume external session", options);
 		if (selected === undefined) return undefined;
 		if (selected === "→ older…") continue;
 		const index = labels.indexOf(selected);
-		if (index >= 0) return page[index];
+		if (index >= 0) return page.sessions[index];
 		return undefined;
 	}
-	return undefined;
 };
 
 const validDirectory = (path: string): boolean => {
@@ -173,6 +170,11 @@ const registerRenderers = (pi: ExtensionAPI): void => {
 };
 
 const runImport = async (ctx: ExtensionCommandContext, source: "claude" | "codex" | undefined, filter: string): Promise<void> => {
+	if (!ctx.model) {
+		ctx.ui.notify("External session import requires an active Pi model", "error");
+		return;
+	}
+	const modelIdentity: ModelIdentity = { api: ctx.model.api, provider: ctx.model.provider, modelId: ctx.model.id };
 	const selected = await pickSession(ctx, source, filter);
 	if (!selected) return;
 	const targetCwd = await pickTargetCwd(ctx, selected.cwd);
@@ -188,7 +190,7 @@ const runImport = async (ctx: ExtensionCommandContext, source: "claude" | "codex
 	}
 
 	const sessionManager = SessionManager.create(targetCwd);
-	const result = importConversation(sessionManager, conversation, Date.now());
+	const result = importConversation(sessionManager, conversation, modelIdentity, Date.now());
 	const sessionFile = sessionManager.getSessionFile();
 	if (!sessionFile) {
 		ctx.ui.notify("Imported session could not be persisted", "error");

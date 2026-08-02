@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { METADATA_READ_BYTES, capText, compactInline, isObject, type ExternalSessionRef } from "./types.ts";
+import { METADATA_READ_BYTES, PAGE_SIZE, capText, compactInline, isObject, type ExternalSessionRef } from "./types.ts";
 
 export interface ListExternalSessionsOptions {
 	source?: "claude" | "codex";
@@ -97,7 +97,13 @@ const applyMetadataLine = (ref: ExternalSessionRef, line: string): void => {
 	if (!isObject(record)) return;
 	if (ref.source === "claude") {
 		if (ref.cwd === undefined && typeof record.cwd === "string") ref.cwd = record.cwd;
-		if (ref.preview === undefined && record.type === "user" && isObject(record.message)) {
+		if (
+			ref.preview === undefined &&
+			record.type === "user" &&
+			record.isMeta !== true &&
+			record.isSidechain !== true &&
+			isObject(record.message)
+		) {
 			const text = claudeText(record.message);
 			if (text) ref.preview = capText(compactInline(text), 80);
 		}
@@ -143,3 +149,33 @@ export const filterExternalSessions = (sessions: ExternalSessionRef[], filter: s
 	if (!needle) return sessions;
 	return sessions.filter((session) => `${session.path}\n${session.cwd ?? ""}`.toLowerCase().includes(needle));
 };
+
+export interface ExternalSessionPage {
+	sessions: ExternalSessionRef[];
+	hasMore: boolean;
+}
+
+export class ExternalSessionPageScanner {
+	private readonly sessions: ExternalSessionRef[];
+	private readonly filter: string;
+	private readonly pending: ExternalSessionRef[] = [];
+	private cursor = 0;
+
+	constructor(sessions: ExternalSessionRef[], filter: string) {
+		this.sessions = sessions;
+		this.filter = filter;
+	}
+
+	async nextPage(): Promise<ExternalSessionPage> {
+		while (this.pending.length < PAGE_SIZE && this.cursor < this.sessions.length) {
+			const batch = this.sessions.slice(this.cursor, this.cursor + PAGE_SIZE);
+			this.cursor += batch.length;
+			const enriched = await Promise.all(batch.map(readSessionMetadata));
+			this.pending.push(...filterExternalSessions(enriched, this.filter));
+		}
+		return {
+			sessions: this.pending.splice(0, PAGE_SIZE),
+			hasMore: this.pending.length > 0 || this.cursor < this.sessions.length,
+		};
+	}
+}

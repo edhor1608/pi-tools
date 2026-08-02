@@ -56,6 +56,28 @@ void describe("ClaudeParser", () => {
 		}
 	});
 
+	void test("removes paired ids from both maps after either pairing order", () => {
+		const call = line({
+			type: "assistant",
+			message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "pwd" } }] },
+		});
+		const result = line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "first" }] } });
+		const duplicate = line({
+			type: "user",
+			message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "must not mutate paired call" }] },
+		});
+		for (const records of [
+			[call, result, duplicate],
+			[result, call, duplicate],
+		]) {
+			const conversation = parse(records);
+			const assistant = conversation.events[0];
+			assert.equal(assistant?.kind, "assistant");
+			if (assistant?.kind === "assistant") assert.equal(assistant.toolCalls[0]?.output, "first");
+			assert.equal(conversation.skippedRecords, 1);
+		}
+	});
+
 	void test("excludes thinking and non-conversation records, merges assistant chunks, and counts malformed input", () => {
 		const conversation = parse([
 			"not-json",

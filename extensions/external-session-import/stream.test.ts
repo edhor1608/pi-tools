@@ -27,7 +27,7 @@ const conversation = (path: string, skippedRecords = 0): NormalizedConversation 
 });
 
 void describe("parseJsonlStream", () => {
-	void test("feeds complete CRLF-delimited lines incrementally", async () => {
+	void test("feeds CRLF-delimited lines and an unterminated final line incrementally", async () => {
 		const records = [
 			JSON.stringify({ type: "session_meta", payload: { id: "stream-id" } }),
 			JSON.stringify({
@@ -35,7 +35,7 @@ void describe("parseJsonlStream", () => {
 				payload: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
 			}),
 		];
-		await withTempFile(`${records.join("\r\n")}\r\n`, async (path) => {
+		await withTempFile(records.join("\r\n"), async (path) => {
 			const result = await parseJsonlStream(
 				path,
 				new CodexParser({ sourcePath: path, fallbackTimestamp: 1 }),
@@ -69,12 +69,21 @@ void describe("parseJsonlStream", () => {
 		});
 	});
 
-	void test("drops and counts an oversized line before parsing later records", async () => {
+	void test("external abort destroys a multi-chunk stream and rejects with ImportAbortedError", async () => {
+		await withTempFile("{}\n".repeat(1024 * 1024), async (path) => {
+			const controller = new AbortController();
+			const parsing = parseJsonlStream(path, new CodexParser({ sourcePath: path, fallbackTimestamp: 1 }), controller.signal);
+			queueMicrotask(() => controller.abort());
+			await assert.rejects(parsing, ImportAbortedError);
+		});
+	});
+
+	void test("drops a multi-chunk oversized line and parses the following unterminated line", async () => {
 		const valid = JSON.stringify({
 			type: "response_item",
 			payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "after large line" }] },
 		});
-		await withTempFile(`${"x".repeat(MAX_LINE_BYTES + 1)}\n${valid}\n`, async (path) => {
+		await withTempFile(`${"x".repeat(MAX_LINE_BYTES + 1)}\r\n${valid}`, async (path) => {
 			const result = await parseJsonlStream(
 				path,
 				new CodexParser({ sourcePath: path, fallbackTimestamp: 1 }),

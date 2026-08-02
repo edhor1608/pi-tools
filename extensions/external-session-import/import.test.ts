@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { convertToLlm, SessionManager } from "@earendil-works/pi-coding-agent";
-import { importConversation, summarizeToolCalls } from "./import.ts";
+import { importConversation, summarizeToolCalls, type ModelIdentity } from "./import.ts";
 import { SUMMARY_LINE_CAP, SUMMARY_TOOLS_PER_TURN, type NormalizedConversation, type NormalizedToolCall } from "./types.ts";
+
+const MODEL_IDENTITY = {
+	api: "openai-codex-responses",
+	provider: "openai-codex",
+	modelId: "gpt-current",
+} as const satisfies ModelIdentity;
 
 const FIXTURE_TOOL_CALLS: NormalizedToolCall[] = [
 	{
@@ -65,7 +71,7 @@ void describe("summarizeToolCalls", () => {
 void describe("importConversation", () => {
 	void test("writes native messages plus contextual summaries and non-contextual full activity", () => {
 		const sessionManager = SessionManager.inMemory("/synthetic/target");
-		const result = importConversation(sessionManager, fixtureConversation(), 400);
+		const result = importConversation(sessionManager, fixtureConversation(), MODEL_IDENTITY, 400);
 		assert.deepEqual(result, { messageCount: 3, toolCallCount: 2 });
 
 		const entries = sessionManager.getEntries();
@@ -105,6 +111,9 @@ void describe("importConversation", () => {
 		const assistantEntries = entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant");
 		for (const entry of assistantEntries) {
 			if (entry.type === "message" && entry.message.role === "assistant") {
+				assert.equal(entry.message.api, MODEL_IDENTITY.api);
+				assert.equal(entry.message.provider, MODEL_IDENTITY.provider);
+				assert.equal(entry.message.model, MODEL_IDENTITY.modelId);
 				assert.equal(
 					entry.message.content.every((block) => block.type === "text"),
 					true,
@@ -119,6 +128,8 @@ void describe("importConversation", () => {
 		assert.equal(contextJson.includes("[Imported tool activity"), true);
 		assert.equal(contextJson.includes("full payload must stay non-contextual"), false);
 		assert.equal(contextJson.includes("/synthetic/source.jsonl"), false);
+		assert.equal(contextJson.includes("claude-fixture"), false);
+		assert.deepEqual(context.model, { provider: MODEL_IDENTITY.provider, modelId: MODEL_IDENTITY.modelId });
 		const llmMessages = convertToLlm(context.messages);
 		assert.equal(
 			llmMessages.some((message) => message.role === "user" && JSON.stringify(message.content).includes("[Imported tool activity")),

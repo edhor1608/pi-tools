@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ProviderId } from "@earendil-works/pi-ai";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
 	SUMMARY_LINE_CAP,
@@ -30,6 +30,12 @@ export interface ExternalImportTools {
 export interface ImportResult {
 	messageCount: number;
 	toolCallCount: number;
+}
+
+export interface ModelIdentity {
+	api: Api;
+	provider: ProviderId;
+	modelId: string;
 }
 
 const ZERO_USAGE = {
@@ -81,6 +87,7 @@ const sessionName = (conversation: NormalizedConversation): string => {
 export const importConversation = (
 	sessionManager: SessionManager,
 	conversation: NormalizedConversation,
+	modelIdentity: ModelIdentity,
 	importedAt: number,
 ): ImportResult => {
 	const provenance: ExternalImportProvenance = {
@@ -109,9 +116,9 @@ export const importConversation = (
 		const assistantMessage = {
 			role: "assistant",
 			content: [{ type: "text", text: event.text || "(tool activity only)" }],
-			api: conversation.source,
-			provider: conversation.source,
-			model: conversation.sourceModel ?? "unknown",
+			api: modelIdentity.api,
+			provider: modelIdentity.provider,
+			model: modelIdentity.modelId,
 			usage: ZERO_USAGE,
 			stopReason: "stop",
 			timestamp: event.timestamp,

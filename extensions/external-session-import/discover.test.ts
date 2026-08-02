@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { filterExternalSessions, listExternalSessions, readSessionMetadata } from "./discover.ts";
-import { METADATA_READ_BYTES, type ExternalSessionRef } from "./types.ts";
+import { ExternalSessionPageScanner, filterExternalSessions, listExternalSessions, readSessionMetadata } from "./discover.ts";
+import { METADATA_READ_BYTES, PAGE_SIZE, type ExternalSessionRef } from "./types.ts";
 
 const withFixtureHome = async (run: (home: string) => Promise<void>): Promise<void> => {
 	const home = await mkdtemp(join(tmpdir(), "external-import-discovery-"));
@@ -52,7 +52,14 @@ void describe("external session discovery", () => {
 	void test("extracts visible-page metadata without reading beyond 64KB", async () => {
 		await withFixtureHome(async (home) => {
 			const normalPath = join(home, "normal.jsonl");
-			await writeFile(normalPath, `${JSON.stringify({ type: "user", cwd: "/synthetic/project", message: { content: "first prompt" } })}\n`);
+			await writeFile(
+				normalPath,
+				[
+					JSON.stringify({ type: "user", cwd: "/synthetic/project", isMeta: true, message: { content: "meta prompt" } }),
+					JSON.stringify({ type: "user", cwd: "/synthetic/project", isSidechain: true, message: { content: "sidechain prompt" } }),
+					JSON.stringify({ type: "user", cwd: "/synthetic/project", message: { content: "first real prompt" } }),
+				].join("\n") + "\n",
+			);
 			const details = await stat(normalPath);
 			const normal = await readSessionMetadata({
 				source: "claude",
@@ -61,7 +68,7 @@ void describe("external session discovery", () => {
 				sizeBytes: details.size,
 			});
 			assert.equal(normal.cwd, "/synthetic/project");
-			assert.equal(normal.preview, "first prompt");
+			assert.equal(normal.preview, "first real prompt");
 
 			const boundedPath = join(home, "bounded.jsonl");
 			const beyondBound = `${"x".repeat(METADATA_READ_BYTES + 1)}\n${JSON.stringify({
@@ -79,6 +86,41 @@ void describe("external session discovery", () => {
 			});
 			assert.equal(bounded.cwd, undefined);
 			assert.equal(bounded.preview, undefined);
+		});
+	});
+
+	void test("finds cwd matches beyond the first bounded batch and keeps every session pageable", async () => {
+		await withFixtureHome(async (home) => {
+			const directory = join(home, ".codex", "sessions", "2025", "01", "03");
+			await mkdir(directory, { recursive: true });
+			const targetIndex = PAGE_SIZE + 2;
+			const paths: string[] = [];
+			for (let index = 0; index < PAGE_SIZE + 5; index++) {
+				const path = join(directory, `rollout-${String(index).padStart(2, "0")}.jsonl`);
+				const cwd = index === targetIndex ? "/work/deep-cwd-match" : `/work/other-${index}`;
+				await writeFile(path, `${JSON.stringify({ type: "session_meta", payload: { id: `id-${index}`, cwd } })}\n`);
+				await utimes(path, new Date(100_000 - index * 1000), new Date(100_000 - index * 1000));
+				paths.push(path);
+			}
+
+			const sessions = await listExternalSessions({ homedir: home, source: "codex" });
+			assert.ok(sessions.findIndex((session) => session.path === paths[targetIndex]) >= PAGE_SIZE);
+			const filtered = await new ExternalSessionPageScanner(sessions, "DEEP-CWD-MATCH").nextPage();
+			assert.deepEqual(
+				filtered.sessions.map((session) => session.path),
+				[paths[targetIndex]],
+			);
+			assert.equal(filtered.hasMore, false);
+
+			const unfiltered = new ExternalSessionPageScanner(sessions, "");
+			const firstPage = await unfiltered.nextPage();
+			const secondPage = await unfiltered.nextPage();
+			assert.equal(firstPage.sessions.length, PAGE_SIZE);
+			assert.equal(firstPage.hasMore, true);
+			assert.deepEqual(
+				[...firstPage.sessions, ...secondPage.sessions].map((session) => session.path),
+				sessions.map((session) => session.path),
+			);
 		});
 	});
 

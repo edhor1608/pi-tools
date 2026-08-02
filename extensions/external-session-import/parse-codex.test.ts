@@ -58,6 +58,22 @@ void describe("CodexParser", () => {
 		}
 	});
 
+	void test("removes paired ids from both maps after either pairing order", () => {
+		const call = response({ type: "function_call", name: "shell", arguments: "{}", call_id: "call-1" });
+		const output = response({ type: "function_call_output", call_id: "call-1", output: "first" });
+		const duplicate = response({ type: "function_call_output", call_id: "call-1", output: "must not mutate paired call" });
+		for (const records of [
+			[call, output, duplicate],
+			[output, call, duplicate],
+		]) {
+			const conversation = parse(records);
+			const assistant = conversation.events[0];
+			assert.equal(assistant?.kind, "assistant");
+			if (assistant?.kind === "assistant") assert.equal(assistant.toolCalls[0]?.output, "first");
+			assert.equal(conversation.skippedRecords, 1);
+		}
+	});
+
 	void test("normalizes web search calls and falls back to the file timestamp", () => {
 		const conversation = parse([response({ type: "web_search_call", id: "web-1", action: { query: "pi docs" } }, "invalid")]);
 		assert.deepEqual(conversation.events, [

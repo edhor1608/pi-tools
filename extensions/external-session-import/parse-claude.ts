@@ -137,14 +137,19 @@ export class ClaudeParser implements JsonlParser {
 			if (pending) {
 				this.applyResult(call, pending);
 				this.pendingResults.delete(id);
+				this.openCalls.delete(id);
 			}
 		}
 	}
 
 	private storeResult(id: string, result: ToolResult): void {
 		const call = this.openCalls.get(id);
-		if (call) this.applyResult(call, result);
-		else this.pendingResults.set(id, result);
+		if (call) {
+			this.applyResult(call, result);
+			this.openCalls.delete(id);
+		} else {
+			this.pendingResults.set(id, result);
+		}
 	}
 
 	private applyResult(call: NormalizedToolCall, result: ToolResult): void {
