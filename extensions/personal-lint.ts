@@ -21,7 +21,7 @@ export async function lintPersonalFile(filePath: string, runLint: PersonalLintRu
 	if (!shouldRunPersonalLint(filePath)) return undefined;
 	try {
 		const diagnostics = (await runLint(filePath))?.trim();
-		return diagnostics ? formatPersonalLintDiagnostics(filePath, diagnostics) : undefined;
+		return diagnostics !== undefined && diagnostics !== "" ? formatPersonalLintDiagnostics(filePath, diagnostics) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -50,7 +50,7 @@ export default function personalLintExtension(pi: ExtensionAPI) {
 				if (result.code !== 0 || result.killed || result.stderr.trim()) return undefined;
 				return result.stdout;
 			});
-			if (!message) return;
+			if (message === undefined) return;
 			return { content: [...event.content, { type: "text", text: message }] };
 		} catch {
 			return;

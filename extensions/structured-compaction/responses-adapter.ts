@@ -50,7 +50,7 @@ const isJsonValue = (value: unknown): value is JsonValue =>
 	(isObject(value) && Object.values(value).every(isJsonValue));
 
 const normalizeBaseUrl = (baseUrl: string | undefined, fallback: string): string => {
-	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : fallback;
+	const raw = baseUrl !== undefined && baseUrl.trim().length > 0 ? baseUrl : fallback;
 	return raw.replace(/\/+$/, "");
 };
 
@@ -81,7 +81,7 @@ const resolveResponsesCompactEndpoint = (
 
 const decodeJwtPayload = (token: string): Record<string, unknown> | undefined => {
 	const parts = token.split(".");
-	if (parts.length !== 3 || !parts[1]) return undefined;
+	if (parts.length !== 3 || parts[1] === undefined) return undefined;
 	try {
 		const json = Buffer.from(parts[1], "base64url").toString("utf8");
 		const parsed = JSON.parse(json);
@@ -120,7 +120,7 @@ const buildRemoteHeaders = (
 	headers.set("content-type", "application/json");
 	headers.set("accept", "application/json");
 	if (api === "openai-codex-responses") {
-		headers.set(CODEX_ACCOUNT_ID_HEADER, auth.accountId || "");
+		headers.set(CODEX_ACCOUNT_ID_HEADER, auth.accountId !== undefined ? auth.accountId : "");
 		headers.set("originator", config.backend.remote.originator);
 		headers.set("OpenAI-Beta", "responses=experimental");
 		headers.set("User-Agent", buildUserAgent());
@@ -135,7 +135,11 @@ const buildFriendlyError = async (response: Response): Promise<string> => {
 	if (!text) return `Remote compaction failed with status ${response.status}`;
 	try {
 		const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
-		return parsed.error?.message || parsed.message || text;
+		const errorMessage = parsed.error?.message;
+		if (errorMessage != null && errorMessage !== "") return errorMessage;
+		const message = parsed.message;
+		if (message != null && message !== "") return message;
+		return text;
 	} catch {
 		return text;
 	}
@@ -157,12 +161,12 @@ export const resolveCodexRemoteAuth = async (
 	accountId?: string;
 }> => {
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-	if (!auth.ok || !auth.apiKey) {
+	if (!auth.ok || auth.apiKey === undefined) {
 		throw new Error("No compatible auth for codex-remote compaction");
 	}
 	if (model.api === "openai-codex-responses") {
-		const accountId = getHeader(auth.headers, CODEX_ACCOUNT_ID_HEADER) || extractCodexAccountId(auth.apiKey);
-		if (!accountId) {
+		const accountId = getHeader(auth.headers, CODEX_ACCOUNT_ID_HEADER) ?? extractCodexAccountId(auth.apiKey);
+		if (accountId === undefined) {
 			throw new Error("OpenAI Codex auth is missing chatgpt account information");
 		}
 		return {

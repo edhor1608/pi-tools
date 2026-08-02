@@ -251,7 +251,7 @@ export function orderSubagentTree<T extends Pick<SubagentSnapshot, "id" | "paren
 		ordered.push(snap);
 		for (const child of children.get(snap.id) ?? []) visit(child);
 	};
-	for (const root of snapshots.filter((snap) => !snap.parentId || !ids.has(snap.parentId))) visit(root);
+	for (const root of snapshots.filter((snap) => snap.parentId === undefined || !ids.has(snap.parentId))) visit(root);
 	for (const snap of snapshots) visit(snap);
 	return ordered;
 }
@@ -259,7 +259,7 @@ export function orderSubagentTree<T extends Pick<SubagentSnapshot, "id" | "paren
 /** Final text, or the live streaming buffer while a run is active (v1 `latestOutput`). */
 export function latestText(snap: SubagentSnapshot) {
 	const live = snap.liveAssistant?.text.trim();
-	if (live) return live;
+	if (live != null && live !== "") return live;
 	return snap.finalText;
 }
 

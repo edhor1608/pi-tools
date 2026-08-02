@@ -12,7 +12,7 @@ import { SEVERITIES } from "./fsm.ts";
 const CLAUDE_ALIASES = new Set(["fable", "haiku", "opus", "sonnet"]);
 
 export function isClaudeFamily(modelId: string | undefined): boolean {
-	if (!modelId) return false;
+	if (modelId === undefined) return false;
 	const bare = (modelId.split("/").at(-1) ?? modelId).toLowerCase();
 	return /^claude(?:-|$)/.test(bare) || CLAUDE_ALIASES.has(bare);
 }

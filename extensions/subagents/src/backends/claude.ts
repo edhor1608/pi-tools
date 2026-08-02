@@ -127,7 +127,7 @@ class ClaudeInput implements AsyncIterable<SDKUserMessage> {
 			const next = await new Promise<IteratorResult<SDKUserMessage>>((resolve) => {
 				this.waiter = resolve;
 			});
-			if (next.done) return;
+			if (next.done === true) return;
 			yield next.value;
 		}
 	}
@@ -175,7 +175,7 @@ function outputPreview(value: unknown): string | undefined {
 	if (Array.isArray(value)) {
 		const text = value
 			.flatMap((part) => {
-				if (!part || typeof part !== "object") return [];
+				if (part === null || typeof part !== "object") return [];
 				const record = part as { type?: unknown; text?: unknown };
 				return record.type === "text" && typeof record.text === "string" ? [record.text] : [];
 			})
@@ -323,8 +323,8 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 						...(orchestrationServer ? { mcpServers: { pi_subagents: orchestrationServer } } : {}),
 						includePartialMessages: true,
 						abortController,
-						...(claudeBinary ? { pathToClaudeCodeExecutable: claudeBinary } : {}),
-						...(task.model ? { model: task.model } : {}),
+						...(claudeBinary !== undefined ? { pathToClaudeCodeExecutable: claudeBinary } : {}),
+						...(task.model !== undefined ? { model: task.model } : {}),
 						...(thinkingBudget !== undefined ? { maxThinkingTokens: thinkingBudget } : {}),
 					},
 				}),
@@ -465,8 +465,13 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 					finalText: result.result.trim() || state.currentText,
 				});
 			} else {
+				const joinedErrors = result.errors.filter((error) => error.trim()).join("\n");
 				const details =
-					result.errors.filter((error) => error.trim()).join("\n") || result.stop_reason || `Claude Code ended with ${result.subtype}`;
+					joinedErrors !== ""
+						? joinedErrors
+						: result.stop_reason != null && result.stop_reason !== ""
+							? result.stop_reason
+							: `Claude Code ended with ${result.subtype}`;
 				settle(failedOutcome(boundedError(details)));
 			}
 		};
@@ -527,7 +532,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 				if (!state.closed) {
 					if (state.activeRun) {
 						settle(state.interruptRequested ? interruptedOutcome() : failedOutcome(failure ?? "Claude Code query ended unexpectedly"));
-					} else if (failure) {
+					} else if (failure != null && failure !== "") {
 						emit({ _tag: "BackendError", message: failure });
 					}
 					state.closed = true;
@@ -621,7 +626,7 @@ const makeClaudeSession = (task: SpawnTask): Effect.Effect<SubagentSession, Spaw
 					try {
 						const receipt = await nativeQuery.interrupt();
 						const hasOwnQueuedMessage = receipt?.still_queued?.some((uuid) => state.submittedUuids.has(uuid));
-						if (hasOwnQueuedMessage) {
+						if (hasOwnQueuedMessage === true) {
 							// 0.3.220 exposes cancellation receipts but no public per-message
 							// cancel method. Closing is the only way to prevent a cancelled
 							// queued prompt from immediately starting another turn.

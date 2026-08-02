@@ -52,8 +52,8 @@ await test("Claude backend completes a live manager run", { timeout: 60_000 }, a
 		const done = manager.view.get(started.id);
 		assert.equal(done?.status, "done");
 		assert.match(done?.finalText ?? "", /hello claude/i);
-		assert.ok(done?.meta.nativeSessionId);
-		assert.ok(done?.meta.sessionFilePath?.endsWith(".jsonl"));
+		assert.ok(done?.meta.nativeSessionId !== undefined);
+		assert.ok(done?.meta.sessionFilePath?.endsWith(".jsonl") === true);
 	} finally {
 		await runtime.dispose();
 	}
@@ -132,13 +132,14 @@ await test("Claude backend interrupt settles a live run as aborted", { timeout: 
 		const streamDeadline = Date.now() + 15_000;
 		while (
 			manager.view.get(started.id)?.status === "running" &&
-			!manager.view.get(started.id)?.liveAssistant?.text &&
+			(manager.view.get(started.id)?.liveAssistant?.text ?? "") === "" &&
 			Date.now() < streamDeadline
 		) {
 			await new Promise((resolve) => setTimeout(resolve, 20));
 		}
 		assert.equal(manager.view.get(started.id)?.status, "running");
-		assert.ok(manager.view.get(started.id)?.liveAssistant?.text);
+		const liveText = manager.view.get(started.id)?.liveAssistant?.text;
+		assert.ok(liveText !== undefined && liveText !== "");
 
 		const report = await deadline(runTool(runtime, manager.cancel([started.id])), 20_000);
 

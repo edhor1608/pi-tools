@@ -58,9 +58,9 @@ function renderAssistantItem(theme: Theme, item: Extract<TranscriptItem, { kind:
 			if (!text) continue;
 			out.push(...wrapTextWithAnsi(text, width));
 		} else if (part.type === "thinking") {
-			renderThinking(theme, part.redacted ? "[redacted reasoning]" : part.text, width, out);
+			renderThinking(theme, part.redacted === true ? "[redacted reasoning]" : part.text, width, out);
 		} else if (part.type === "toolCall") {
-			const preview = part.argsPreview ? sanitizeText(part.argsPreview) : "";
+			const preview = part.argsPreview != null && part.argsPreview !== "" ? sanitizeText(part.argsPreview) : "";
 			const line =
 				theme.fg("muted", "→ ") + theme.fg("toolTitle", part.name) + (preview && preview !== "{}" ? theme.fg("dim", ` ${preview}`) : "");
 			out.push(truncateToWidth(line, width));
@@ -107,10 +107,15 @@ export function buildTranscriptLines(snap: SubagentSnapshot, width: number, them
 	// Live tool executions (present until the ToolEnd lands in the transcript).
 	for (const tool of snap.liveTools) {
 		if (out.length > 0) out.push("");
-		const marker = tool.done ? (tool.isError ? theme.fg("error", "error") : theme.fg("success", "done")) : theme.fg("warning", "running");
+		const marker =
+			tool.done === true
+				? tool.isError === true
+					? theme.fg("error", "error")
+					: theme.fg("success", "done")
+				: theme.fg("warning", "running");
 		let line = `${theme.fg("toolTitle", tool.name)} · ${marker}`;
-		const preview = tool.outputPreview && sanitizeText(tool.outputPreview);
-		if (preview) line += theme.fg("dim", ` · ${preview}`);
+		const preview = tool.outputPreview != null && tool.outputPreview !== "" ? sanitizeText(tool.outputPreview) : undefined;
+		if (preview !== undefined) line += theme.fg("dim", ` · ${preview}`);
 		out.push(truncateToWidth(line, width));
 	}
 

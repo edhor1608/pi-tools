@@ -38,7 +38,7 @@ const serializeMessages = (messages: AgentMessage[]): string | undefined => {
 };
 
 const xmlBlock = (name: string, content: string | undefined): string | undefined => {
-	if (!content) return undefined;
+	if (content == null || content === "") return undefined;
 	return `<${name}>\n${content}\n</${name}>`;
 };
 
@@ -55,7 +55,7 @@ const resolveSummaryModelAndAuth = async (
 	config: StructuredCompactionConfig,
 ): Promise<{ model: Model<Api>; modelRef: string; apiKey: string; headers?: Record<string, string>; env?: ProviderEnv }> => {
 	const attempts: Array<{ model: Model<Api>; modelRef: string }> = [];
-	if (config.backend.model) {
+	if (config.backend.model !== null) {
 		const configuredModel = resolveConfiguredModel(ctx, config.backend.model);
 		if (!configuredModel) {
 			throw new Error(`Configured compaction model not found: ${config.backend.model}`);
@@ -70,7 +70,7 @@ const resolveSummaryModelAndAuth = async (
 	}
 	for (const attempt of attempts) {
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(attempt.model);
-		if (auth.ok && auth.apiKey) {
+		if (auth.ok && auth.apiKey !== undefined) {
 			return {
 				model: attempt.model,
 				modelRef: attempt.modelRef,
@@ -89,7 +89,9 @@ const runPiModelSummary = async (input: StructuredCompactionInput, runtime: Back
 
 	const previousReplacementHistory = input.previousArtifact ? serializeMessages(input.previousArtifact.replacementMessages) : undefined;
 	const previousSummary =
-		input.previousSummary && input.previousSummary !== input.previousArtifact?.summary ? input.previousSummary : undefined;
+		input.previousSummary != null && input.previousSummary !== "" && input.previousSummary !== input.previousArtifact?.summary
+			? input.previousSummary
+			: undefined;
 	const conversation = serializeMessages(input.messagesToSummarize) ?? "(none)";
 	const splitTurnPrefix = serializeMessages(input.turnPrefixMessages);
 	const fileContext = [
@@ -98,6 +100,8 @@ const runPiModelSummary = async (input: StructuredCompactionInput, runtime: Back
 	]
 		.filter((value): value is string => value !== undefined)
 		.join("\n\n");
+	const trimmedCustomInstructions = input.customInstructions?.trim();
+	const customInstructions = trimmedCustomInstructions != null && trimmedCustomInstructions !== "" ? trimmedCustomInstructions : undefined;
 
 	const sections = [
 		xmlBlock(
@@ -113,7 +117,7 @@ const runPiModelSummary = async (input: StructuredCompactionInput, runtime: Back
 		xmlBlock("conversation", conversation),
 		xmlBlock("split-turn-prefix", splitTurnPrefix),
 		xmlBlock("file-context", fileContext || undefined),
-		xmlBlock("custom-instructions", input.customInstructions?.trim() || undefined),
+		xmlBlock("custom-instructions", customInstructions),
 		prompts.compact,
 	].filter((value): value is string => value !== undefined);
 
@@ -142,7 +146,11 @@ const runPiModelSummary = async (input: StructuredCompactionInput, runtime: Back
 	);
 
 	if (response.stopReason === "error") {
-		throw new Error(response.errorMessage || "Compaction summary backend returned an error");
+		throw new Error(
+			response.errorMessage != null && response.errorMessage !== ""
+				? response.errorMessage
+				: "Compaction summary backend returned an error",
+		);
 	}
 
 	const summary = response.content
@@ -247,9 +255,8 @@ export const runStructuredCompactionBackend = async (
 			};
 		}
 	}
+	// BACKENDS is a Record covering every non-"auto" CompactionBackend["kind"], so this
+	// lookup can never miss — TypeScript proves it, which is why there is no undefined guard here.
 	const backend = BACKENDS[runtime.config.backend.kind];
-	if (!backend) {
-		throw new Error(`Unsupported structured compaction backend: ${runtime.config.backend.kind}`);
-	}
 	return backend.run(input, runtime);
 };

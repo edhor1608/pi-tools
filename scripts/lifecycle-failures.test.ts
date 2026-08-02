@@ -22,7 +22,7 @@ void test("failure records are shaped, clipped, and session ids are shortened", 
 		input: input.slice(0, 300),
 		error: error.slice(0, 500),
 	});
-	assert.ok(serializeFailureRecord(record)?.endsWith("\n"));
+	assert.ok(serializeFailureRecord(record)?.endsWith("\n") === true);
 });
 
 void test("likely secrets are redacted", () => {

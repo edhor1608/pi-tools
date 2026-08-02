@@ -50,7 +50,7 @@ function bounded(text: string) {
 /** Mirror the Pi backend's model lookup so routing can guard the concrete provider before spawning. */
 function resolvedModelForRouting(task: SpawnTask) {
 	const registry = task.parent.modelRegistry;
-	if (!task.model) return task.parent.inheritedModel;
+	if (task.model === undefined) return task.parent.inheritedModel;
 	if (!registry) return undefined;
 
 	const slash = task.model.indexOf("/");
@@ -70,7 +70,8 @@ function resolvedModelForRouting(task: SpawnTask) {
 function nestedResultMessage(snap: SubagentSnapshot) {
 	const verb = snap.status === "error" ? "failed" : "finished";
 	const output = (snap.finalText || "(no output)").slice(-NESTED_RESULT_MAX_LENGTH);
-	return `Subagent ${snap.id} "${snap.title}" ${verb}.${snap.errorText ? `\nError: ${snap.errorText}` : ""}\n\n${output}`;
+	const errorSuffix = snap.errorText != null && snap.errorText !== "" ? `\nError: ${snap.errorText}` : "";
+	return `Subagent ${snap.id} "${snap.title}" ${verb}.${errorSuffix}\n\n${output}`;
 }
 
 function boundedTranscriptText(text: string) {
@@ -222,7 +223,7 @@ const makeManager = Effect.gen(function* () {
 				// A failed status/render listener must not corrupt lifecycle state.
 			}
 		}
-		if (id) {
+		if (id !== undefined) {
 			for (const listener of idListeners.get(id) ?? []) {
 				try {
 					listener();
@@ -276,7 +277,7 @@ const makeManager = Effect.gen(function* () {
 
 	const isDescendant = (id: string, ancestorId: string) => {
 		let current = entries.get(id)?.snapshot.parentId ?? inFlightParents.get(id);
-		while (current) {
+		while (current !== undefined) {
 			if (current === ancestorId) return true;
 			current = entries.get(current)?.snapshot.parentId ?? inFlightParents.get(current);
 		}
@@ -334,7 +335,7 @@ const makeManager = Effect.gen(function* () {
 		const recipientId = s.parentId;
 		const consumed = (waitInterest.get(interestKey(recipientId, s.id)) ?? 0) > 0;
 		notify(s.id);
-		if (!disposed && recipientId) {
+		if (!disposed && recipientId !== undefined) {
 			const parentEntry = entries.get(recipientId);
 			if (!consumed && parentEntry && parentEntry.snapshot.status !== "error" && !parentEntry.cancelling) {
 				const pending = pendingDeliveries.get(recipientId) ?? [];
@@ -449,7 +450,7 @@ const makeManager = Effect.gen(function* () {
 					parts: event.parts.map((part) => {
 						if (part.type !== "toolCall") return { ...part, text: boundedTranscriptText(part.text) };
 						const { argsPreview, ...rest } = part;
-						const boundedArgsPreview = argsPreview ? boundedTranscriptText(argsPreview) : undefined;
+						const boundedArgsPreview = argsPreview != null && argsPreview !== "" ? boundedTranscriptText(argsPreview) : undefined;
 						return boundedArgsPreview !== undefined ? { ...rest, argsPreview: boundedArgsPreview } : rest;
 					}),
 				});
@@ -457,7 +458,7 @@ const makeManager = Effect.gen(function* () {
 				s.turns++;
 				break;
 			case "ToolStart": {
-				const argsPreview = event.argsPreview ? boundedTranscriptText(event.argsPreview) : undefined;
+				const argsPreview = event.argsPreview != null && event.argsPreview !== "" ? boundedTranscriptText(event.argsPreview) : undefined;
 				entry.liveToolMap.set(event.toolId, {
 					toolId: event.toolId,
 					name: event.name,
@@ -469,7 +470,8 @@ const makeManager = Effect.gen(function* () {
 			case "ToolUpdate": {
 				const current = entry.liveToolMap.get(event.toolId);
 				if (current) {
-					const outputPreview = event.outputPreview ? boundedTranscriptText(event.outputPreview) : current.outputPreview;
+					const outputPreview =
+						event.outputPreview != null && event.outputPreview !== "" ? boundedTranscriptText(event.outputPreview) : current.outputPreview;
 					entry.liveToolMap.set(event.toolId, {
 						...current,
 						...(outputPreview !== undefined ? { outputPreview } : {}),
@@ -481,7 +483,8 @@ const makeManager = Effect.gen(function* () {
 			case "ToolEnd": {
 				entry.liveToolMap.delete(event.toolId);
 				s.liveTools = [...entry.liveToolMap.values()];
-				const outputPreview = event.outputPreview ? boundedTranscriptText(event.outputPreview) : undefined;
+				const outputPreview =
+					event.outputPreview != null && event.outputPreview !== "" ? boundedTranscriptText(event.outputPreview) : undefined;
 				appendTranscript(s, {
 					kind: "toolResult",
 					toolId: event.toolId,
@@ -594,7 +597,7 @@ const makeManager = Effect.gen(function* () {
 	spawnOwned = (requestedBackend, requestedTask, parentId, options) =>
 		Effect.gen(function* () {
 			const bareModelProviders =
-				requestedTask.model && !requestedTask.model.includes("/")
+				requestedTask.model !== undefined && !requestedTask.model.includes("/")
 					? requestedTask.parent.modelRegistry
 							?.getAll()
 							.filter((model) => model.id === requestedTask.model)
@@ -626,8 +629,8 @@ const makeManager = Effect.gen(function* () {
 			if (mode === "orchestrator" && backendName !== "claude") {
 				return yield* new SpawnError({ message: "Orchestrator mode requires the Claude backend." });
 			}
-			const parentEntry = parentId ? entries.get(parentId) : undefined;
-			if (parentId && !parentEntry) {
+			const parentEntry = parentId !== undefined ? entries.get(parentId) : undefined;
+			if (parentId !== undefined && !parentEntry) {
 				return yield* new SpawnError({ message: `Parent subagent "${parentId}" is no longer tracked.` });
 			}
 			const depth = (parentEntry?.snapshot.depth ?? -1) + 1;
@@ -668,7 +671,7 @@ const makeManager = Effect.gen(function* () {
 			);
 			inFlightParents.delete(id);
 			const parentUnavailable = parentEntry && (parentEntry.snapshot.status === "error" || parentEntry.cancelling);
-			if (disposed || cancelledSpawns.delete(id) || parentUnavailable) {
+			if (disposed || cancelledSpawns.delete(id) || parentUnavailable === true) {
 				yield* Scope.close(scope, Exit.void);
 				return yield* new SpawnError({
 					message: disposed ? "Subagent manager shut down while spawning." : `Parent subagent "${parentId}" stopped while spawning.`,
@@ -728,7 +731,7 @@ const makeManager = Effect.gen(function* () {
 	waitForOwned = (ids, onPending, recipientId) =>
 		Effect.suspend(() => {
 			const unique = [...new Set(ids)];
-			if (recipientId) claimPendingDeliveries(recipientId, unique);
+			if (recipientId !== undefined) claimPendingDeliveries(recipientId, unique);
 			addInterest(unique, recipientId);
 			const loop = Effect.gen(function* () {
 				while (true) {
@@ -871,7 +874,7 @@ const makeManager = Effect.gen(function* () {
 				return new SendError({ message: `Subagent "${id}" is being cancelled.` });
 			}
 			if (entry.snapshot.status !== "running") {
-				if (entry.snapshot.parentId) claimPendingDeliveries(entry.snapshot.parentId, [id]);
+				if (entry.snapshot.parentId !== undefined) claimPendingDeliveries(entry.snapshot.parentId, [id]);
 				pendingDeliveries.delete(id);
 				entry.cancelling = false;
 				entry.terminating = false;

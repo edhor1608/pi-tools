@@ -32,18 +32,25 @@ function createTestRuntime(
 		spawn: (task) => {
 			if (task.orchestration) controllers.set(task.title, task.orchestration);
 			const session = claudeStub.spawn(task);
-			if (!options.failClaudeSends && !options.claudeSendDelay && !options.closeClaudeAfterSettlement) return session;
+			if (
+				options.failClaudeSends !== true &&
+				(options.claudeSendDelay === undefined || options.claudeSendDelay === 0) &&
+				options.closeClaudeAfterSettlement !== true
+			)
+				return session;
 			return session.pipe(
 				Effect.map((spawned) => ({
 					...spawned,
-					events: options.closeClaudeAfterSettlement
-						? spawned.events.pipe(Stream.takeUntil((event) => event._tag === "RunSettled"))
-						: spawned.events,
-					send: options.failClaudeSends
-						? () => new SendError({ message: "injected send failure" })
-						: options.claudeSendDelay
-							? (text) => Effect.sleep(Duration.millis(options.claudeSendDelay ?? 0)).pipe(Effect.andThen(spawned.send(text)))
-							: (text) => spawned.send(text),
+					events:
+						options.closeClaudeAfterSettlement === true
+							? spawned.events.pipe(Stream.takeUntil((event) => event._tag === "RunSettled"))
+							: spawned.events,
+					send:
+						options.failClaudeSends === true
+							? () => new SendError({ message: "injected send failure" })
+							: options.claudeSendDelay !== undefined && options.claudeSendDelay !== 0
+								? (text) => Effect.sleep(Duration.millis(options.claudeSendDelay ?? 0)).pipe(Effect.andThen(spawned.send(text)))
+								: (text) => spawned.send(text),
 				})),
 			);
 		},
@@ -58,7 +65,7 @@ function createTestRuntime(
 	const piBackend: SubagentBackend = {
 		...piStub,
 		spawn: (task) =>
-			options.piSpawnDelay
+			options.piSpawnDelay !== undefined && options.piSpawnDelay !== 0
 				? Effect.sleep(Duration.millis(options.piSpawnDelay)).pipe(Effect.andThen(piStub.spawn(task)))
 				: piStub.spawn(task),
 	};

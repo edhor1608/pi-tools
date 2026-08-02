@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getExtensionStatuses, onStatusChange, type ExtensionStatus } from "./shared/status-bus.ts";
 
-const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+const rawAgentDir = process.env.PI_CODING_AGENT_DIR;
+const PI_AGENT_DIR = rawAgentDir != null && rawAgentDir !== "" ? rawAgentDir : join(homedir(), ".pi", "agent");
 const CACHE_PATH = join(PI_AGENT_DIR, "pi-statusline-cache.json");
 const AUTH_PATH = join(PI_AGENT_DIR, "auth.json");
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage";
@@ -98,7 +99,7 @@ export default function statuslineExtension(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			if (args.trim() === "debug") {
 				await refreshCodexUsage(ctx, true);
-				ctx.ui.notify(renderDebug(), cache.lastError ? "warning" : "info");
+				ctx.ui.notify(renderDebug(), cache.lastError !== undefined ? "warning" : "info");
 				return;
 			}
 			enabled = !enabled;
@@ -176,7 +177,7 @@ function renderLocation(ctx: PiContext, theme: RenderTheme, branch: string | nul
 	void refreshLocation(ctx.cwd);
 	const location = locationCache?.cwd === ctx.cwd ? locationCache : undefined;
 	const dir = location?.dir ?? basename(ctx.cwd);
-	const git = branch ? `  ${branch}${location?.dirty ? " *" : ""}` : "";
+	const git = branch !== null ? `  ${branch}${location?.dirty === true ? " *" : ""}` : "";
 	return `${theme.fg("accent", dir)}${theme.fg("dim", git)}`;
 }
 
@@ -221,29 +222,29 @@ function renderLimits(theme: RenderTheme, ctx?: PiContext): string {
 
 	const bucket = freshestLimit(cache.limits ?? []);
 	if (!bucket) {
-		return cache.lastError ? theme.fg("warning", "Codex limits unavailable") : theme.fg("dim", "Codex limits: loading");
+		return cache.lastError !== undefined ? theme.fg("warning", "Codex limits unavailable") : theme.fg("dim", "Codex limits: loading");
 	}
 
 	const now = Date.now();
 	const usedPct = Math.max(0, Math.min(100, Math.round(((bucket.limit - bucket.remaining) / bucket.limit) * 100)));
 	const label = bucket.name === "tokens" ? "tok" : "req";
 	const stale = now - bucket.observedAt > LIMIT_HEADER_TTL_MS;
-	const reset = bucket.resetAt ? ` ↻${formatTime(bucket.resetAt)}` : "";
+	const reset = bucket.resetAt !== undefined ? ` ↻${formatTime(bucket.resetAt)}` : "";
 	const warning = usedPct >= 90 ? "warning" : usedPct >= 75 ? "accent" : "success";
 	const suffix = stale ? " stale" : reset;
 	return `${theme.fg("dim", `Codex ${label}`)} ${limitBar(usedPct)} ${theme.fg(warning, `${usedPct}%`)}${theme.fg("dim", suffix)}`;
 }
 
 function renderCodexUsage(theme: RenderTheme, usage: CodexUsage): string {
-	const plan = usage.planType ? ` ${usage.planType}` : "";
-	const credits = usage.creditsAvailable && usage.creditsAvailable > 0 ? ` +${usage.creditsAvailable} reset` : "";
+	const plan = usage.planType !== undefined ? ` ${usage.planType}` : "";
+	const credits = usage.creditsAvailable !== undefined && usage.creditsAvailable > 0 ? ` +${usage.creditsAvailable} reset` : "";
 	const windows = usage.windows.map((window) => renderCodexUsageWindow(theme, window)).join(theme.fg("dim", " · "));
 	return `${theme.fg("dim", `Codex${plan}`)} ${windows}${theme.fg("dim", credits)}`;
 }
 
 function renderCodexUsageWindow(theme: RenderTheme, window: CodexUsageWindow): string {
 	const warning = window.usedPercent >= 90 ? "warning" : window.usedPercent >= 75 ? "accent" : "success";
-	const reset = window.resetAt ? ` ↻${formatTime(window.resetAt)}` : "";
+	const reset = window.resetAt !== undefined ? ` ↻${formatTime(window.resetAt)}` : "";
 	return `${theme.fg("dim", window.label)} ${limitBar(window.usedPercent)} ${theme.fg(warning, `${window.usedPercent}%`)}${theme.fg("dim", reset)}`;
 }
 
@@ -363,7 +364,7 @@ function windowFromResponse(value: unknown): CodexUsageWindow | undefined {
 	return {
 		label: codexWindowLabel(windowSeconds),
 		usedPercent: Math.max(0, Math.min(100, Math.round(usedPercent))),
-		...(resetAtSeconds ? { resetAt: resetAtSeconds * 1000 } : {}),
+		...(resetAtSeconds !== undefined && resetAtSeconds !== 0 ? { resetAt: resetAtSeconds * 1000 } : {}),
 		...(windowSeconds !== undefined ? { windowSeconds } : {}),
 	};
 }
@@ -386,7 +387,7 @@ function limitsFromHeaders(headers: Record<string, string | string[] | undefined
 	for (const name of ["requests", "tokens"] as const) {
 		const limit = parseNumber(get(`x-ratelimit-limit-${name}`));
 		const remaining = parseNumber(get(`x-ratelimit-remaining-${name}`));
-		if (!limit || remaining === undefined) continue;
+		if (limit === undefined || limit === 0 || remaining === undefined) continue;
 		const resetAt = parseReset(get(`x-ratelimit-reset-${name}`), now);
 		buckets.push({
 			name,
@@ -493,18 +494,18 @@ function formatTime(ms: number): string {
 }
 
 function parseNumber(value: string | undefined): number | undefined {
-	if (!value) return undefined;
+	if (value === undefined || value === "") return undefined;
 	const parsed = Number(value.replace(/,/g, ""));
 	return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parseReset(value: string | undefined, now: number): number | undefined {
-	if (!value) return undefined;
+	if (value === undefined || value === "") return undefined;
 	const trimmed = value.trim();
 	const numeric = Number(trimmed);
 	if (Number.isFinite(numeric)) return numeric > 10_000_000_000 ? numeric : numeric * 1000;
 	const relative = trimmed.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/i);
-	if (relative?.[1] && relative[2]) {
+	if (relative?.[1] !== undefined && relative[2] !== undefined) {
 		const amount = Number(relative[1]);
 		const unit = relative[2].toLowerCase();
 		const factor = unit === "ms" ? 1 : unit === "s" ? 1000 : unit === "m" ? 60_000 : 3_600_000;
@@ -521,9 +522,9 @@ function utilization(bucket: LimitBucket): number {
 async function resolveModelCodexCredential(ctx: PiContext): Promise<{ access: string; accountId: string } | undefined> {
 	if (!ctx.model) return undefined;
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-	if (!auth.ok || !auth.apiKey) return undefined;
+	if (!auth.ok || auth.apiKey === undefined) return undefined;
 	const accountId = getHeader(auth.headers, CODEX_ACCOUNT_ID_HEADER) ?? extractCodexAccountId(auth.apiKey);
-	return accountId ? { access: auth.apiKey, accountId } : undefined;
+	return accountId !== undefined ? { access: auth.apiKey, accountId } : undefined;
 }
 
 function readStoredCodexCredential(): { access: string; accountId: string } | undefined {
@@ -551,7 +552,7 @@ function getHeader(headers: Record<string, string> | undefined, name: string): s
 
 function extractCodexAccountId(token: string): string | undefined {
 	const parts = token.split(".");
-	if (parts.length !== 3 || !parts[1]) return undefined;
+	if (parts.length !== 3 || parts[1] === undefined) return undefined;
 	try {
 		const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
 		if (!isObject(payload)) return undefined;
@@ -630,14 +631,15 @@ function writeCache(next: Cache): void {
 
 function shortError(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
-	return message.split("\n", 1)[0]?.slice(0, 120) || "unknown error";
+	const firstLine = message.split("\n", 1)[0]?.slice(0, 120);
+	return firstLine !== undefined && firstLine !== "" ? firstLine : "unknown error";
 }
 
 function renderDebug(): string {
 	const usage = cache.codexUsage;
 	if (usage) {
 		const windows = usage.windows.map((window) => `${window.label} ${window.usedPercent}%`).join(", ");
-		return `Codex usage ${windows}${cache.lastError ? `; last error: ${cache.lastError}` : ""}`;
+		return `Codex usage ${windows}${cache.lastError !== undefined ? `; last error: ${cache.lastError}` : ""}`;
 	}
-	return cache.lastError ? `Codex usage unavailable: ${cache.lastError}` : "Codex usage has not been fetched yet";
+	return cache.lastError !== undefined ? `Codex usage unavailable: ${cache.lastError}` : "Codex usage has not been fetched yet";
 }

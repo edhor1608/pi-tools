@@ -199,7 +199,7 @@ function describeState(state: ReviewLoopState, settings: ReviewLoopSettings, tru
 		case "reviewing":
 		case "re-reviewing":
 			return `review-loop r${state.round}/${settings.fsm.maxRounds} ${state.phase}${state.reviewInFlight ? "" : " (pending)"}${
-				state.reviewer?.model ? ` · ${state.reviewer.model}` : ""
+				state.reviewer?.model !== undefined ? ` · ${state.reviewer.model}` : ""
 			}`;
 		case "triage":
 			return `review-loop r${state.round}/${settings.fsm.maxRounds} triage · ${state.findings.length} finding(s)`;
@@ -225,7 +225,7 @@ function buildFixInstruction(findings: Finding[], round: number): string {
 		"",
 	];
 	for (const finding of findings) {
-		lines.push(`- [${finding.severity}] ${finding.title}${finding.detail ? ` — ${finding.detail}` : ""}`);
+		lines.push(`- [${finding.severity}] ${finding.title}${finding.detail != null && finding.detail !== "" ? ` — ${finding.detail}` : ""}`);
 	}
 	lines.push("", "When done, simply end your turn; the review loop verifies and re-reviews automatically.");
 	return lines.join("\n");
@@ -368,7 +368,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			backend: routing.backend,
 			...(routing.model !== undefined ? { model: routing.model } : {}),
 		});
-		if (generation !== gen || result.cancelled) return;
+		if (generation !== gen || result.cancelled === true) return;
 		const reviewerModel = result.modelLabel ?? routing.model;
 		const reviewer = {
 			backend: routing.backend,
@@ -492,7 +492,7 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 		// Untrusted project: never execute project-config commands. Status shows
 		// "fingerprint-only (untrusted project config ignored)".
 		const [command, ...args] = (isTrusted() ? settings.verifyCommand : undefined) ?? [];
-		if (command) {
+		if (command !== undefined) {
 			try {
 				await execFileAsync(command, args, { cwd: ctx.cwd, maxBuffer: 32 * 1024 * 1024, timeout: VERIFY_COMMAND_TIMEOUT_MS });
 			} catch (error) {
@@ -566,7 +566,8 @@ export default function reviewLoopExtension(pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_toolCallId, params) {
-			const owner: FixOwner | undefined = params.owner_subagent_id ? { kind: "subagent", id: params.owner_subagent_id } : undefined;
+			const owner: FixOwner | undefined =
+				params.owner_subagent_id !== undefined ? { kind: "subagent", id: params.owner_subagent_id } : undefined;
 			const message = handleAction(params.action, "agent", owner);
 			return {
 				content: [{ type: "text", text: `${message}\n${describeState(state, settings, isTrusted())}` }],

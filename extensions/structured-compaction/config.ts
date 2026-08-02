@@ -68,7 +68,7 @@ export const ensureStructuredCompactionDefaults = () =>
 
 const resolveCandidatePaths = (cwd: string, relativeOrAbsolutePath: string | undefined, defaultRelativePath: string): string[] => {
 	const { globalRoot, projectRoot } = getRoots(cwd);
-	if (relativeOrAbsolutePath) {
+	if (relativeOrAbsolutePath !== undefined) {
 		if (isAbsolute(relativeOrAbsolutePath)) return [relativeOrAbsolutePath];
 		return [join(projectRoot, relativeOrAbsolutePath), join(globalRoot, relativeOrAbsolutePath)];
 	}
@@ -95,13 +95,13 @@ export const loadStructuredCompactionPrompts = async (
 
 	const systemPath = systemCandidates.find(existsSync);
 	const compactPath = compactCandidates.find(existsSync);
-	const system = systemPath ? readText(systemPath) : undefined;
-	const compact = compactPath ? readText(compactPath) : undefined;
+	const system = systemPath !== undefined ? readText(systemPath) : undefined;
+	const compact = compactPath !== undefined ? readText(compactPath) : undefined;
 
-	if (!system) {
+	if (system === undefined) {
 		throw new Error(`Missing structured compaction system prompt. Checked: ${systemCandidates.join(", ")}`);
 	}
-	if (!compact) {
+	if (compact === undefined) {
 		throw new Error(`Missing structured compaction compact prompt. Checked: ${compactCandidates.join(", ")}`);
 	}
 

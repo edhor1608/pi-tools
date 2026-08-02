@@ -311,7 +311,7 @@ function handleWorkSettled(state: ReviewLoopState, event: Extract<ReviewLoopEven
 		}
 		case "blocked":
 			// Only an explicit user/agent retry (/review-loop now) leaves blocked.
-			if (!event.forced) return noChange(state);
+			if (event.forced !== true) return noChange(state);
 			return startRound(armed(state), event.fingerprint, "initial");
 		default:
 			return noChange(state);

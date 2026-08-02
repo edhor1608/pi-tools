@@ -350,10 +350,10 @@ function stashExtension(pi: ExtensionAPI) {
 		}
 		while (true) {
 			const picked = await showPicker(ctx);
-			if (!picked || picked === "close") return;
+			if (picked === null || picked === "close") return;
 			if (picked === "add") {
 				const content = await promptForContent(ctx, "Stash prompt");
-				if (!content) continue;
+				if (content == null || content === "") continue;
 				const mode = await pickMode(ctx, "manual");
 				if (!mode) continue;
 				const item = await mutateState(ctx, (draft) => createItem(draft, content, mode));
@@ -365,10 +365,10 @@ function stashExtension(pi: ExtensionAPI) {
 			const item = findItem(state, id);
 			if (!item) continue;
 			const action = await showItemActions(ctx, item);
-			if (!action || action === "Back") continue;
+			if (action === undefined || action === "Back") continue;
 			if (action === "Edit prompt") {
 				const content = await promptForContent(ctx, `Edit stash #${id}`, item.content);
-				if (!content) continue;
+				if (content == null || content === "") continue;
 				await mutateState(ctx, (draft) => updateItemContent(draft, id, content));
 				continue;
 			}
@@ -412,7 +412,7 @@ function stashExtension(pi: ExtensionAPI) {
 		const current = ctx.ui.getEditorText();
 		const prefill = normalizeContent(current).length > 0 ? current : "";
 		const content = prefill || (await promptForContent(ctx, "Stash prompt", ""));
-		if (!content) return;
+		if (content === undefined) return;
 		const mode = await pickMode(ctx, "manual");
 		if (!mode) return;
 		const item = await mutateState(ctx, (draft) => createItem(draft, content, mode));
@@ -451,7 +451,7 @@ function stashExtension(pi: ExtensionAPI) {
 					}
 					let content = text;
 					if (!content) {
-						content = (await promptForContent(ctx, "Stash prompt")) || "";
+						content = (await promptForContent(ctx, "Stash prompt")) ?? "";
 					}
 					if (!content) throw new Error("Usage: /stash add [manual|draft|send] <text>");
 					if (!text && ctx.hasUI) {
@@ -470,7 +470,7 @@ function stashExtension(pi: ExtensionAPI) {
 					if (!content) {
 						const currentItem = findItem(state, id);
 						if (!currentItem) throw new Error(`Stash item #${id} not found`);
-						content = (await promptForContent(ctx, `Edit stash #${id}`, currentItem.content)) || "";
+						content = (await promptForContent(ctx, `Edit stash #${id}`, currentItem.content)) ?? "";
 					}
 					if (!content) throw new Error("Usage: /stash edit <id> <text>");
 					await mutateState(ctx, (draft) => updateItemContent(draft, id, content));

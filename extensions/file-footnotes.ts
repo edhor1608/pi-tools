@@ -68,7 +68,7 @@ const parseHashLocation = (hash: string): { line?: number; column?: number } => 
 	const match = /^#L(\d+)(?:C(\d+))?$/.exec(hash);
 	if (!match) return {};
 	const line = Number(match[1]);
-	return match[2] ? { line, column: Number(match[2]) } : { line };
+	return match[2] !== undefined ? { line, column: Number(match[2]) } : { line };
 };
 
 const splitPathLocationSuffix = (href: string): { pathPart: string; suffix: string; line?: number; column?: number } => {
@@ -76,14 +76,14 @@ const splitPathLocationSuffix = (href: string): { pathPart: string; suffix: stri
 	if (hash?.index !== undefined) {
 		const pathPart = href.slice(0, hash.index);
 		const line = Number(hash[1]);
-		return hash[2] ? { pathPart, suffix: hash[0], line, column: Number(hash[2]) } : { pathPart, suffix: hash[0], line };
+		return hash[2] !== undefined ? { pathPart, suffix: hash[0], line, column: Number(hash[2]) } : { pathPart, suffix: hash[0], line };
 	}
 	const lastSlash = Math.max(href.lastIndexOf("/"), href.lastIndexOf("\\"));
 	const colon = /:(\d+)(?::(\d+))?$/.exec(href);
 	if (colon && colon.index > lastSlash) {
 		const pathPart = href.slice(0, colon.index);
 		const line = Number(colon[1]);
-		return colon[2] ? { pathPart, suffix: colon[0], line, column: Number(colon[2]) } : { pathPart, suffix: colon[0], line };
+		return colon[2] !== undefined ? { pathPart, suffix: colon[0], line, column: Number(colon[2]) } : { pathPart, suffix: colon[0], line };
 	}
 	return { pathPart: href, suffix: "" };
 };
@@ -114,16 +114,16 @@ const parseFileTarget = (href: string): ParsedFileTarget => {
 };
 
 const buildVsCodeUrl = (target: ParsedFileTarget): string | undefined => {
-	if (!target.filesystemPath) return undefined;
+	if (target.filesystemPath === undefined) return undefined;
 	const fileUrl = pathToFileURL(target.filesystemPath).href;
 	const base =
 		process.platform === "win32" ? fileUrl.replace(/^file:\/\/\//, "vscode://file/") : fileUrl.replace(/^file:\/\//, "vscode://file/");
-	return target.line ? `${base}:${target.line}${target.column ? `:${target.column}` : ""}` : base;
+	return target.line !== undefined ? `${base}:${target.line}${target.column !== undefined ? `:${target.column}` : ""}` : base;
 };
 
 const createFootnoteItem = (href: string, index: number): FileFootnoteItem => {
 	const target = parseFileTarget(href);
-	const openUrl = target.filesystemPath ? pathToFileURL(target.filesystemPath).href : undefined;
+	const openUrl = target.filesystemPath !== undefined ? pathToFileURL(target.filesystemPath).href : undefined;
 	const vscodeUrl = buildVsCodeUrl(target);
 	return {
 		index,
@@ -215,7 +215,7 @@ export const rewriteFileLinksAsFootnotes = (text: string): string => {
 		.split("\n")
 		.map((line) => {
 			const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-			if (fence) {
+			if (fence !== undefined) {
 				const marker = fence[0] as "`" | "~";
 				if (!fencedBy) fencedBy = marker;
 				else if (fencedBy === marker) fencedBy = undefined;
@@ -294,15 +294,18 @@ const openUriWithSystem = async (pi: ExtensionAPI, uri: string): Promise<void> =
 };
 
 const openFootnoteInVsCode = async (pi: ExtensionAPI, item: FileFootnoteItem): Promise<void> => {
-	if (!item.filesystemPath) throw new Error(`No local filesystem path for footnote [${item.index}]`);
-	const target = item.line ? `${item.filesystemPath}:${item.line}${item.column ? `:${item.column}` : ""}` : item.filesystemPath;
+	if (item.filesystemPath === undefined) throw new Error(`No local filesystem path for footnote [${item.index}]`);
+	const target =
+		item.line !== undefined
+			? `${item.filesystemPath}:${item.line}${item.column !== undefined ? `:${item.column}` : ""}`
+			: item.filesystemPath;
 	try {
-		const result = await pi.exec("code", item.line ? ["--goto", target] : [item.filesystemPath], { timeout: 5000 });
+		const result = await pi.exec("code", item.line !== undefined ? ["--goto", target] : [item.filesystemPath], { timeout: 5000 });
 		if (result.code === 0) return;
 	} catch {
 		// The URL scheme keeps the command useful when the optional code CLI is unavailable.
 	}
-	if (!item.vscodeUrl) throw new Error(`No VS Code URL for footnote [${item.index}]`);
+	if (item.vscodeUrl === undefined) throw new Error(`No VS Code URL for footnote [${item.index}]`);
 	await openUriWithSystem(pi, item.vscodeUrl);
 };
 
@@ -324,7 +327,7 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 		description: "Open file footnotes from the latest assistant message",
 		handler: async (args, ctx) => {
 			const latest = getLatestAssistantText(ctx);
-			if (latest.error) {
+			if (latest.error !== undefined) {
 				ctx.ui.notify(latest.error, latest.error.includes("incomplete") ? "error" : "warning");
 				return;
 			}
@@ -337,7 +340,7 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 				const item = items.find((candidate) => candidate.index === index);
 				if (!item) throw new Error(`Unknown footnote index: ${index}`);
 				if (mode === "vscode") await openFootnoteInVsCode(pi, item);
-				else if (item.openUrl) await openUriWithSystem(pi, item.openUrl);
+				else if (item.openUrl !== undefined) await openUriWithSystem(pi, item.openUrl);
 				else throw new Error(`No open URL for footnote [${index}]`);
 				ctx.ui.notify(`Opened footnote [${index}] ${mode === "vscode" ? "in VS Code" : "with the system opener"}`, "info");
 			};
@@ -351,11 +354,11 @@ export default function fileFootnotesExtension(pi: ExtensionAPI) {
 				}
 				const labels = items.map((item) => `[${item.index}] ${item.displayHref}`);
 				const selected = await ctx.ui.select("Open file footnote", labels);
-				if (!selected) return;
+				if (selected === undefined) return;
 				const item = items[labels.indexOf(selected)];
 				if (!item) return;
 				const action = await ctx.ui.select("Open how?", ["Open path", "Open in VS Code"]);
-				if (action) await open(action === "Open in VS Code" ? "vscode" : "open", item.index);
+				if (action !== undefined) await open(action === "Open in VS Code" ? "vscode" : "open", item.index);
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : "Failed to open file footnote", "error");
 			}

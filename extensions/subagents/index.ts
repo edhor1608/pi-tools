@@ -88,7 +88,7 @@ function loadPaidOpenRouterUserGate(configPath: string) {
 }
 
 function prepareSubagentSpawnArguments(args: unknown) {
-	if (!args || typeof args !== "object" || !("allowPaidOpencode" in args)) return args;
+	if (args === null || args === undefined || typeof args !== "object" || !("allowPaidOpencode" in args)) return args;
 	const { allowPaidOpencode: _legacyPaidConsent, ...current } = args as Record<string, unknown>;
 	return current;
 }
@@ -97,7 +97,7 @@ function describeSubagent(snap: SubagentSnapshot) {
 	const details = [
 		`${snap.backend}: ${snap.meta.modelLabel ?? "?"}`,
 		snap.mode,
-		snap.parentId ? `parent ${snap.parentId}` : undefined,
+		snap.parentId !== undefined ? `parent ${snap.parentId}` : undefined,
 		snap.waitingForChildren ? "waiting for descendants" : undefined,
 		formatContextUtilization(snap.usage),
 		formatElapsed(snap),
@@ -430,7 +430,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				const verb = snap.status === "error" ? "failed" : "finished";
 				let section = `## ${snap.id} "${snap.title}" ${verb}`;
-				if (snap.errorText) section += `\nError: ${snap.errorText}`;
+				if (snap.errorText != null && snap.errorText !== "") section += `\nError: ${snap.errorText}`;
 				const headerBytes = Buffer.byteLength(section, "utf8") + 2;
 				const outputBudget = Math.max(512, Math.min(WAIT_PER_AGENT_MAX_BYTES, remainingBytes - headerBytes));
 				section += `\n\n${truncatedOutput(snap, outputBudget)}`;
@@ -550,7 +550,7 @@ export default function (pi: ExtensionAPI) {
 
 			const children = manager.view.list().filter((entry) => entry.parentId === snap.id);
 			let text = `${describeSubagent(snap)}\nTurns: ${snap.turns}\nChildren: ${children.map((entry) => entry.id).join(", ") || "none"}`;
-			if (snap.errorText) text += `\nError: ${snap.errorText}`;
+			if (snap.errorText != null && snap.errorText !== "") text += `\nError: ${snap.errorText}`;
 
 			const output = latestText(snap);
 			if (output) {

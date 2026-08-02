@@ -30,7 +30,7 @@ await test("subagent_spawn advertises only the OpenRouter paid opt-in and prepar
 	subagentsExtension(pi);
 	const spawn = tools.find((tool) => tool.name === "subagent_spawn");
 	assert.ok(spawn);
-	assert.ok(spawn.parameters.properties?.allowPaidOpenrouter);
+	assert.ok(spawn.parameters.properties?.allowPaidOpenrouter !== undefined);
 	assert.equal(spawn.parameters.properties?.allowPaidOpencode, undefined);
 	assert.ok(spawn.prepareArguments);
 	assert.deepEqual(

@@ -73,7 +73,7 @@ export const createFailureRecord = (input: FailureRecordInput): FailureRecord =>
 });
 
 export const isAbortedFailure = (error: unknown, signal?: AbortSignal): boolean => {
-	if (signal?.aborted) return true;
+	if (signal?.aborted === true) return true;
 	const finalLine = stringify(error).trim().split(/\r?\n/).at(-1)?.trim() ?? "";
 	return /^(?:error:\s*)?(?:(?:operation|command|request|tool call)(?: was)?\s+)?(?:aborted|cancelled|canceled|interrupted)(?: by (?:the )?user)?[.!]?$/i.test(
 		finalLine,
@@ -105,9 +105,16 @@ const textContent = (content: readonly unknown[]): string =>
 		.map((item) => item.text)
 		.join("\n");
 
-const toolError = (event: ToolResultEvent): string => textContent(event.content) || stringify(event.details);
+const toolError = (event: ToolResultEvent): string => {
+	const text = textContent(event.content);
+	return text !== "" ? text : stringify(event.details);
+};
 
-const assistantFailure = (message: AssistantMessage): string => message.errorMessage || textContent(message.content) || "Assistant error";
+const assistantFailure = (message: AssistantMessage): string => {
+	if (message.errorMessage !== undefined && message.errorMessage !== "") return message.errorMessage;
+	const text = textContent(message.content);
+	return text !== "" ? text : "Assistant error";
+};
 
 export default function lifecycleFailuresExtension(pi: ExtensionAPI) {
 	const instanceToken = Symbol("lifecycle-failures-instance");
@@ -119,7 +126,7 @@ export default function lifecycleFailuresExtension(pi: ExtensionAPI) {
 	const log = (record: FailureRecord): void => {
 		try {
 			const line = serializeFailureRecord(record);
-			if (!line) return;
+			if (line === undefined) return;
 			writeQueue = writeQueue
 				.then(async () => {
 					await mkdir(dirname(FAILURE_LOG), { recursive: true });

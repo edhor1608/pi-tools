@@ -36,7 +36,7 @@ await test("Pi backend completes a live inherited-model run", { timeout: 60_000 
 		assert.equal(done?.status, "done");
 		assert.match(done?.finalText ?? "", /hello pi subagent/i);
 		assert.equal(done?.meta.modelLabel, "openai-codex/gpt-5.6-sol");
-		assert.ok(done?.meta.sessionFilePath?.endsWith(".jsonl"));
+		assert.ok(done?.meta.sessionFilePath?.endsWith(".jsonl") === true);
 	} finally {
 		await runtime.dispose();
 	}

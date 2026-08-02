@@ -6,7 +6,7 @@ const TOOL_OUTPUT_MAX_LENGTH = 48 * 1_024;
 const RESULT_OUTPUT_MAX_LENGTH = 16 * 1_024;
 
 function requestSignal(extra: unknown) {
-	if (!extra || typeof extra !== "object") return undefined;
+	if (extra === null || extra === undefined || typeof extra !== "object") return undefined;
 	const signal = (extra as { signal?: unknown }).signal;
 	return signal instanceof AbortSignal ? signal : undefined;
 }
@@ -27,13 +27,13 @@ async function handle(work: () => Promise<string>) {
 }
 
 function describe(snap: SubagentSnapshot) {
-	const relation = snap.parentId ? `, parent ${snap.parentId}` : "";
+	const relation = snap.parentId !== undefined ? `, parent ${snap.parentId}` : "";
 	return `${snap.id} [${snap.status}] "${snap.title}" (${snap.backend}: ${snap.meta.modelLabel ?? "?"}, ${snap.mode}${relation})`;
 }
 
 function resultText(snap: SubagentSnapshot) {
 	const verb = snap.status === "error" ? "failed" : "finished";
-	const error = snap.errorText ? `\nError: ${snap.errorText}` : "";
+	const error = snap.errorText != null && snap.errorText !== "" ? `\nError: ${snap.errorText}` : "";
 	const output = (snap.finalText || "(no output)").slice(-RESULT_OUTPUT_MAX_LENGTH);
 	return `## ${snap.id} "${snap.title}" ${verb}${error}\n\n${output}`;
 }
@@ -118,7 +118,7 @@ export function createOrchestrationTools(controller: OrchestrationController) {
 					const snap = await controller.get(args.id);
 					if (!snap) throw new Error(`Subagent "${args.id}" was not found in this descendant tree.`);
 					const output = snap.finalText ? `\n\nLatest output:\n${snap.finalText.slice(-2_048)}` : "";
-					return `${describe(snap)}\nTurns: ${snap.turns}${snap.errorText ? `\nError: ${snap.errorText}` : ""}${output}`;
+					return `${describe(snap)}\nTurns: ${snap.turns}${snap.errorText != null && snap.errorText !== "" ? `\nError: ${snap.errorText}` : ""}${output}`;
 				}),
 			{ alwaysLoad: true },
 		),

@@ -75,7 +75,7 @@ await test("Codex remote compaction uses the current endpoint contract", async (
 		const headers = new Headers(capturedRequest.init.headers);
 		assert.equal(headers.get("session-id"), "session-test");
 		assert.equal(headers.get("session_id"), null);
-		assert.ok(headers.get("x-client-request-id"));
+		assert.ok(headers.get("x-client-request-id") !== null);
 		assert.equal(headers.get("chatgpt-account-id"), "account-test");
 		const requestBody = capturedRequest.init.body;
 		assert.equal(typeof requestBody, "string");

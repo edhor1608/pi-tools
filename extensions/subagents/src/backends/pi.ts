@@ -55,7 +55,7 @@ function resolvePiModel(
 	hint: string | undefined,
 	inherited: { provider: string; id: string } | undefined,
 ): Model<Api> | undefined {
-	if (!hint) {
+	if (hint === undefined) {
 		if (!inherited) return undefined;
 		if (isRetiredOpenCodeProvider(inherited.provider)) {
 			throw new Error(`OpenCode provider "${inherited.provider}" is retired for subagents.`);
@@ -200,15 +200,15 @@ function toolPreview(value: unknown): string | undefined {
 			.find((line) => line.trim())
 			?.trim();
 	}
-	if (!value || typeof value !== "object") return undefined;
+	if (value === null || value === undefined || typeof value !== "object") return undefined;
 	const content = (value as { content?: unknown }).content;
 	if (!Array.isArray(content)) return undefined;
 	for (const part of content) {
-		if (!part || typeof part !== "object") continue;
+		if (part === null || part === undefined || typeof part !== "object") continue;
 		const record = part as { type?: unknown; text?: unknown };
 		if (record.type !== "text" || typeof record.text !== "string") continue;
 		const firstLine = record.text.split("\n").find((line) => line.trim());
-		if (firstLine) return firstLine.trim();
+		if (firstLine !== undefined) return firstLine.trim();
 	}
 	return undefined;
 }
@@ -221,7 +221,7 @@ function assistantParts(msg: AssistantMessage): TranscriptPart[] {
 		} else if (part.type === "thinking") {
 			parts.push({
 				type: "thinking",
-				text: part.redacted ? "" : part.thinking,
+				text: part.redacted === true ? "" : part.thinking,
 				...(part.redacted !== undefined ? { redacted: part.redacted } : {}),
 			});
 		} else if (part.type === "toolCall") {
@@ -243,7 +243,8 @@ function userText(msg: Message): string {
 	if (!Array.isArray(content)) return "";
 	return content
 		.filter(
-			(part): part is { type: "text"; text: string } => !!part && typeof part === "object" && (part as { type?: unknown }).type === "text",
+			(part): part is { type: "text"; text: string } =>
+				part !== null && part !== undefined && typeof part === "object" && (part as { type?: unknown }).type === "text",
 		)
 		.map((part) => part.text)
 		.join("\n");

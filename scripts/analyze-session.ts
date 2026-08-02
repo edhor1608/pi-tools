@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { buildStructuredCompactionReport, formatStructuredCompactionReport } from "../extensions/structured-compaction/report.ts";
 
 const sessionPath = process.argv[2];
-if (!sessionPath) {
+if (sessionPath === undefined || sessionPath === "") {
 	console.error("Usage: node ./scripts/analyze-session.ts <session.jsonl>");
 	process.exit(1);
 }

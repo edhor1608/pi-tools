@@ -32,7 +32,7 @@ const findPackageRoot = (moduleUrl: string): string | undefined => {
 
 export const getPackageRoot = (moduleUrl: string): string => {
 	const packageRoot = findPackageRoot(moduleUrl);
-	if (!packageRoot) {
+	if (packageRoot === undefined) {
 		throw new Error(`Could not find package root for ${moduleUrl}`);
 	}
 	return packageRoot;
@@ -47,7 +47,7 @@ export const ensurePackagedDefaults = (moduleUrl: string, packageRelativeSource:
 
 	const promise = (async () => {
 		const packageRoot = findPackageRoot(moduleUrl);
-		if (!packageRoot) return;
+		if (packageRoot === undefined) return;
 		const sourcePath = join(packageRoot, packageRelativeSource);
 		if (!existsSync(sourcePath)) return;
 		const lockPath = join(targetPath, ".pi-tools.defaults.lock");

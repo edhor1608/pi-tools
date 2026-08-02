@@ -72,7 +72,7 @@ export async function openSubagentPicker(ctx: ExtensionCommandContext, view: Sub
 			},
 		);
 
-		if (!picked) return;
+		if (picked === null) return;
 		if (!view.get(picked)) continue;
 
 		await openSubagentTakeover(ctx, view, picked);
@@ -88,7 +88,7 @@ export interface DashboardSelection {
 }
 
 export function reconcileDashboardSelection(selection: DashboardSelection, subs: ReadonlyArray<Pick<SubagentSnapshot, "id">>) {
-	const stableIndex = selection.id ? subs.findIndex((snap) => snap.id === selection.id) : -1;
+	const stableIndex = selection.id !== undefined ? subs.findIndex((snap) => snap.id === selection.id) : -1;
 	selection.index = stableIndex >= 0 ? stableIndex : Math.min(Math.max(0, selection.index), Math.max(0, subs.length - 1));
 	const nextId = subs[selection.index]?.id;
 	if (nextId !== undefined) selection.id = nextId;
@@ -455,10 +455,10 @@ class TakeoverView implements Component, Focusable {
 			`${statusGlyph(snap, theme)} ` +
 			theme.fg("accent", theme.bold(`${snap.id} · ${snap.title}`)) +
 			theme.fg("muted", ` · ${snap.waitingForChildren ? "waiting" : snap.status} · ${formatElapsed(snap)}`) +
-			(this.options?.badge ? theme.fg("muted", ` · ${this.options.badge}`) : "") +
+			(this.options?.badge != null && this.options.badge !== "" ? theme.fg("muted", ` · ${this.options.badge}`) : "") +
 			theme.fg(
 				"dim",
-				` · ${snap.backend}: ${snap.meta.modelLabel ?? "?"} · ${snap.mode}${snap.parentId ? ` · parent ${snap.parentId}` : ""} · ${childCount} child${childCount === 1 ? "" : "ren"}`,
+				` · ${snap.backend}: ${snap.meta.modelLabel ?? "?"} · ${snap.mode}${snap.parentId !== undefined ? ` · parent ${snap.parentId}` : ""} · ${childCount} child${childCount === 1 ? "" : "ren"}`,
 			) +
 			(utilization ? theme.fg("dim", ` · ${utilization}`) : "");
 		lines.push(truncateToWidth(header, width));
@@ -468,14 +468,14 @@ class TakeoverView implements Component, Focusable {
 		// inside the viewport so streaming/scrolling never changes overlay height.
 		const transcript = buildTranscriptLines(snap, width, theme);
 		const viewport = this.viewportHeight();
-		const errorRows = snap.errorText ? 1 : 0;
+		const errorRows = snap.errorText != null && snap.errorText !== "" ? 1 : 0;
 		const scrollRows = this.scrollOffset > 0 ? 1 : 0;
 		const transcriptCapacity = Math.max(1, viewport - errorRows - scrollRows);
 		const maxOffset = Math.max(0, transcript.length - transcriptCapacity);
 		if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
 
 		const body: string[] = [];
-		if (snap.errorText) {
+		if (snap.errorText != null && snap.errorText !== "") {
 			body.push(truncateToWidth(theme.fg("error", `error: ${snap.errorText}`), width));
 		}
 

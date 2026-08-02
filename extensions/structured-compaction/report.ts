@@ -25,7 +25,7 @@ const selectStructuredCompactionReportItems = (
 	items: StructuredCompactionReportItem[],
 	options?: StructuredCompactionReportFormatOptions,
 ): StructuredCompactionReportItem[] => {
-	if (!options?.latestOnly) return items;
+	if (options?.latestOnly !== true) return items;
 	const latest = items[items.length - 1];
 	return latest ? [latest] : [];
 };
@@ -38,13 +38,13 @@ const formatReportListLine = (item: StructuredCompactionReportItem): string =>
 
 const getPathEntries = (entries: SessionEntry[], leafId?: string | null): SessionEntry[] => {
 	if (leafId === null) return [];
-	if (!leafId) return entries;
+	if (leafId === undefined) return entries;
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));
 	const path: SessionEntry[] = [];
 	let current = byId.get(leafId);
 	while (current) {
 		path.unshift(current);
-		current = current.parentId ? byId.get(current.parentId) : undefined;
+		current = current.parentId !== null ? byId.get(current.parentId) : undefined;
 	}
 	return path;
 };
@@ -129,10 +129,10 @@ export const formatStructuredCompactionReportItem = (item: StructuredCompactionR
 			`- provider after: total=${formatNumber(item.providerAfter.total)} input=${formatNumber(item.providerAfter.input)} cacheRead=${formatNumber(item.providerAfter.cacheRead)}`,
 		);
 	}
-	if (item.lastAssistantBeforeText) {
+	if (item.lastAssistantBeforeText != null && item.lastAssistantBeforeText !== "") {
 		lines.push(`- last assistant before: ${JSON.stringify(item.lastAssistantBeforeText.slice(0, 90))}`);
 	}
-	if (item.firstAssistantAfterText) {
+	if (item.firstAssistantAfterText != null && item.firstAssistantAfterText !== "") {
 		lines.push(`- first assistant after: ${JSON.stringify(item.firstAssistantAfterText.slice(0, 90))}`);
 	}
 	return lines.join("\n");
@@ -143,13 +143,13 @@ export const formatStructuredCompactionReportPreview = (
 	options?: StructuredCompactionReportFormatOptions,
 ): string => {
 	if (items.length === 0) {
-		return options?.sessionFile
+		return options?.sessionFile !== undefined
 			? `No compactions found for ${options.sessionFile}.`
 			: "No compactions found on the current session branch.";
 	}
 	const selected = selectStructuredCompactionReportItems(items, options);
-	const header = options?.sessionFile ? [`Session: ${options.sessionFile}`, ""] : [];
-	if (options?.latestOnly) {
+	const header = options?.sessionFile !== undefined ? [`Session: ${options.sessionFile}`, ""] : [];
+	if (options?.latestOnly === true) {
 		const item = selected[0];
 		// selectStructuredCompactionReportItems only returns [] when `items` (checked non-empty above) is empty,
 		// so with latestOnly it always yields exactly one item here.
@@ -171,14 +171,14 @@ export const formatStructuredCompactionReport = (
 	options?: StructuredCompactionReportFormatOptions,
 ): string => {
 	if (items.length === 0) {
-		return options?.sessionFile
+		return options?.sessionFile !== undefined
 			? `No compactions found for ${options.sessionFile}.`
 			: "No compactions found on the current session branch.";
 	}
 	const selected = selectStructuredCompactionReportItems(items, options);
 	const sections = [
-		...(options?.sessionFile ? [`Session: ${options.sessionFile}`] : []),
-		options?.latestOnly
+		...(options?.sessionFile !== undefined ? [`Session: ${options.sessionFile}`] : []),
+		options?.latestOnly === true
 			? `Latest compaction${items.length > 1 ? ` (1 of ${items.length} on current branch)` : ""}`
 			: `Compactions on current branch: ${selected.length}`,
 		...selected.map(formatStructuredCompactionReportItem),

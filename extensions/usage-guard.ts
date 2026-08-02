@@ -189,11 +189,13 @@ function formatWindow(window: CodexUsageWindow): string {
 }
 
 function agentDir(): string {
-	return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+	const envDir = process.env.PI_CODING_AGENT_DIR;
+	return envDir != null && envDir !== "" ? envDir : join(homedir(), ".pi", "agent");
 }
 
 function usageGuardStatePath(): string {
-	return join(process.env.PI_USAGE_GUARD_STATE_DIR || agentDir(), "usage-guard-state.json");
+	const envDir = process.env.PI_USAGE_GUARD_STATE_DIR;
+	return join(envDir != null && envDir !== "" ? envDir : agentDir(), "usage-guard-state.json");
 }
 
 async function readOrFetchUsage(now: number, inMemoryUsage: CodexUsage | undefined): Promise<CodexUsage | undefined> {
@@ -236,7 +238,7 @@ async function readStoredCodexCredential(): Promise<CodexCredential | undefined>
 		if (typeof credential.expires === "number" && Date.now() > credential.expires - 60_000) return undefined;
 		if (typeof credential.access !== "string") return undefined;
 		const accountId = typeof credential.accountId === "string" ? credential.accountId : extractCodexAccountId(credential.access);
-		return accountId ? { access: credential.access, accountId } : undefined;
+		return accountId !== undefined ? { access: credential.access, accountId } : undefined;
 	} catch {
 		return undefined;
 	}
@@ -244,7 +246,7 @@ async function readStoredCodexCredential(): Promise<CodexCredential | undefined>
 
 function extractCodexAccountId(token: string): string | undefined {
 	const parts = token.split(".");
-	if (parts.length !== 3 || !parts[1]) return undefined;
+	if (parts.length !== 3 || parts[1] === undefined) return undefined;
 	try {
 		const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
 		if (!isObject(payload) || !isObject(payload[JWT_CLAIM_PATH])) return undefined;

@@ -60,7 +60,7 @@ await test("file links become persisted footnotes and remain openable", async ()
 	assert.ok(typeof replacement === "object" && replacement !== null && "message" in replacement);
 	const replacedMessage = (replacement as { message: typeof assistant }).message;
 	assert.notEqual(replacedMessage, assistant);
-	assert.ok(replacedMessage.content[0]?.text.includes("File references:"));
+	assert.ok(replacedMessage.content[0]?.text.includes("File references:") === true);
 	assert.equal(await messageEndHandler({ message: { role: "user", content: "unchanged" } }), undefined);
 
 	const notifications: string[] = [];

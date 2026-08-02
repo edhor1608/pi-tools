@@ -37,7 +37,7 @@ const findQuestionLine = (text: string): string | undefined => {
 		.filter((line) => line.length > 0)
 		.filter((line) => !line.startsWith("```"));
 	const directQuestion = lines.find((line) => line.endsWith("?"));
-	if (directQuestion) return directQuestion;
+	if (directQuestion !== undefined) return directQuestion;
 	return lines.find((line) =>
 		/(do you want|would you like|should i|should we|can you|could you|please confirm|let me know|which option|which one|what should|how should)/i.test(
 			line,
@@ -46,7 +46,7 @@ const findQuestionLine = (text: string): string | undefined => {
 };
 
 export function classifyAgentEndState(messages: AgentMessage[], options: { hasPendingMessages?: boolean } = {}): AgentEndClassification {
-	if (options.hasPendingMessages) {
+	if (options.hasPendingMessages === true) {
 		return {
 			kind: "queued",
 			summary: "More queued messages are waiting",
@@ -76,7 +76,7 @@ export function classifyAgentEndState(messages: AgentMessage[], options: { hasPe
 		};
 	}
 
-	if (stopReason && stopReason !== "stop" && stopReason !== "toolUse") {
+	if (stopReason !== undefined && stopReason !== "stop" && stopReason !== "toolUse") {
 		if (stopReason === "aborted") {
 			return {
 				kind: "stopped",
@@ -91,7 +91,7 @@ export function classifyAgentEndState(messages: AgentMessage[], options: { hasPe
 
 	const text = getAssistantText(lastAssistant);
 	const question = findQuestionLine(text);
-	if (question) {
+	if (question !== undefined) {
 		return {
 			kind: "question",
 			summary: summarizeText(question),
