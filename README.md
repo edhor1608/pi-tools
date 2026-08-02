@@ -1,7 +1,8 @@
 # pi-tools
 
-`pi-tools` is a focused Pi package with eleven independent extensions:
+`pi-tools` is a focused Pi package with twelve independent extensions:
 
+- `external-session-import` imports local Claude Code and Codex transcripts into new native Pi sessions
 - `subagents` runs background Pi and Claude Code agents with strict model routing
 - `statusline` adds a Claude-style footer with context and Codex limit telemetry, composing statuses published by other extensions
 - `file-footnotes` keeps file-heavy assistant answers readable
@@ -36,7 +37,11 @@ A local checkout also works:
 pi install /absolute/path/to/pi-tools
 ```
 
-The eleven extensions are exposed separately and can be enabled or disabled through `pi config`.
+The twelve extensions are exposed separately and can be enabled or disabled through `pi config`.
+
+## External Session Import
+
+`/resume-external`, `/resume-claude`, and `/resume-codex` discover local sessions; each accepts an optional path or cwd filter. The importer asks for the target working directory, then creates a new native Pi session containing the user/assistant text, provenance, non-contextual full tool activity, and compact contextual tool summaries. Press Escape to cancel parsing. Source sessions are never modified.
 
 ## Subagents
 

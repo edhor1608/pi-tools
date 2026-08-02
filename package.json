@@ -82,6 +82,7 @@
 	"packageManager": "pnpm@11.9.0",
 	"pi": {
 		"extensions": [
+			"./extensions/external-session-import/index.ts",
 			"./extensions/file-footnotes.ts",
 			"./extensions/lifecycle-failures.ts",
 			"./extensions/memories-sync.ts",
