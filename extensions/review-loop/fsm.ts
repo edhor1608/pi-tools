@@ -17,7 +17,7 @@
  * - An invalid review (empty/garbled/reviewer crashed) is retried a bounded
  *   number of times and never treated as a pass.
  * - Backend failure -> "blocked" with a visible reason. Never fall back to
- *   OpenCode or any other provider.
+ *   OpenRouter or any other provider.
  * - The mode never merges or lands work. No effect in this machine can
  *   express a git push/merge, by construction.
  *

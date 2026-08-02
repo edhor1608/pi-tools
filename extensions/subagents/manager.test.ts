@@ -22,7 +22,28 @@ const TestRegistryLive = Layer.sync(BackendRegistry, () => {
 	return new Map<BackendName, SubagentBackend>(backends.map((backend) => [backend.name, backend]));
 });
 
+const RoutingRegistryLive = Layer.sync(BackendRegistry, () => {
+	const backends: SubagentBackend[] = [
+		makeStubBackend({
+			backend: "pi",
+			defaultModelLabel: "openai-codex/gpt-test",
+			contextWindow: 128_000,
+			toolName: "Read",
+			cadenceMs: 40,
+		}),
+		makeStubBackend({
+			backend: "claude",
+			defaultModelLabel: "claude/sonnet",
+			contextWindow: 200_000,
+			toolName: "Bash",
+			cadenceMs: 40,
+		}),
+	];
+	return new Map<BackendName, SubagentBackend>(backends.map((backend) => [backend.name, backend]));
+});
+
 const createTestRuntime = () => ManagedRuntime.make(SubagentManagerLive.pipe(Layer.provide(TestRegistryLive)));
+const createRoutingRuntime = () => ManagedRuntime.make(SubagentManagerLive.pipe(Layer.provide(RoutingRegistryLive)));
 
 const parent: ParentContext = {
 	parentCwd: process.cwd(),
@@ -34,6 +55,16 @@ function task(prompt: string): SpawnTask {
 
 async function withManager(run: (manager: SubagentManagerShape, runtime: ReturnType<typeof createTestRuntime>) => Promise<void>) {
 	const runtime = createTestRuntime();
+	try {
+		const manager = await runtime.runPromise(SubagentManager);
+		await run(manager, runtime);
+	} finally {
+		await runtime.dispose();
+	}
+}
+
+async function withRoutingManager(run: (manager: SubagentManagerShape, runtime: ReturnType<typeof createRoutingRuntime>) => Promise<void>) {
+	const runtime = createRoutingRuntime();
 	try {
 		const manager = await runtime.runPromise(SubagentManager);
 		await run(manager, runtime);
@@ -106,9 +137,44 @@ await test("the manager imposes no subagent concurrency limit", async () => {
 	});
 });
 
-await test("Claude models requested through Pi route to Claude Code", async () => {
+await test("the manager enforces OpenRouter config and per-spawn gates", async () => {
+	await withRoutingManager(async (manager, runtime) => {
+		const paidTask = { ...task("specialist"), model: "openrouter/moonshotai/kimi-k2.5" };
+		await assert.rejects(runTool(runtime, manager.spawn("pi", paidTask, { allowPaidOpenrouter: true })), /OpenRouter is paid and disabled/);
+		await assert.rejects(
+			runTool(runtime, manager.spawn("pi", paidTask, { userAllowsPaidOpenrouter: true })),
+			/spawn-time allowPaidOpenrouter: true/,
+		);
+
+		const snap = await runTool(
+			runtime,
+			manager.spawn("pi", paidTask, {
+				userAllowsPaidOpenrouter: true,
+				allowPaidOpenrouter: true,
+			}),
+		);
+		assert.equal(snap.backend, "pi");
+		assert.equal(snap.meta.modelLabel, "openrouter/moonshotai/kimi-k2.5");
+		await runTool(runtime, manager.cancel([snap.id]));
+	});
+});
+
+await test("the manager rejects retired OpenCode and preserves normal native Pi routing", async () => {
+	await withRoutingManager(async (manager, runtime) => {
+		await assert.rejects(
+			runTool(runtime, manager.spawn("pi", { ...task("retired"), model: "opencode-go/kimi-k2.5" })),
+			/OpenCode provider .* retired/i,
+		);
+		const native = await runTool(runtime, manager.spawn("pi", { ...task("native"), model: "openai-codex/gpt-5.6-sol" }));
+		assert.equal(native.backend, "pi");
+		assert.equal(native.meta.modelLabel, "openai-codex/gpt-5.6-sol");
+		await runTool(runtime, manager.cancel([native.id]));
+	});
+});
+
+await test("Claude models requested through OpenRouter route to Claude Code", async () => {
 	await withManager(async (manager, runtime) => {
-		const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: "opencode/claude-fable-5" }));
+		const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: "openrouter/anthropic/claude-fable-5" }));
 		assert.equal(snap.backend, "claude");
 		assert.equal(snap.meta.modelLabel, "claude-fable-5");
 		await runTool(runtime, manager.cancel([snap.id]));
@@ -117,7 +183,7 @@ await test("Claude models requested through Pi route to Claude Code", async () =
 
 await test("Claude Code model aliases requested through Pi route to Claude Code", async () => {
 	await withManager(async (manager, runtime) => {
-		for (const requested of ["fable", "opencode/haiku", "anthropic/opus", "other/sonnet"]) {
+		for (const requested of ["fable", "openrouter/haiku", "anthropic/opus", "other/sonnet"]) {
 			const snap = await runTool(runtime, manager.spawn("pi", { ...task("review this"), model: requested }));
 			assert.equal(snap.backend, "claude");
 			assert.equal(snap.meta.modelLabel, requested.split("/").at(-1));
@@ -134,7 +200,7 @@ await test("inherited Claude models route Pi spawns to Claude Code", async () =>
 				...task("review this"),
 				parent: {
 					parentCwd: process.cwd(),
-					inheritedModel: { provider: "opencode", id: "claude-opus-4-6" },
+					inheritedModel: { provider: "openrouter", id: "claude-opus-4-6" },
 				},
 			}),
 		);
@@ -146,7 +212,7 @@ await test("inherited Claude models route Pi spawns to Claude Code", async () =>
 
 await test("explicit Claude harness normalizes provider-qualified Claude models", async () => {
 	await withManager(async (manager, runtime) => {
-		const snap = await runTool(runtime, manager.spawn("claude", { ...task("review this"), model: "opencode/claude-fable-5" }));
+		const snap = await runTool(runtime, manager.spawn("claude", { ...task("review this"), model: "openrouter/anthropic/claude-fable-5" }));
 		assert.equal(snap.meta.modelLabel, "claude-fable-5");
 		await runTool(runtime, manager.cancel([snap.id]));
 	});

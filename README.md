@@ -60,6 +60,8 @@ Claude requires an authenticated local installation:
 claude auth status
 ```
 
+OpenRouter is reserved for rare paid root specialists. It requires all three gates: an explicit `openrouter/<model-id>`, persistent `"allowPaidOpenrouter": true` in the user-owned `~/.pi/agent/pi-tools.json` before Pi loads the extension, and `allowPaidOpenrouter: true` on that spawn. OpenRouter is never selected by a bare id, inheritance, nested orchestration, or fallback. Claude-family ids still use Claude Code. OpenCode providers are retired and rejected explicitly.
+
 ## Statusline
 
 Statusline replaces Pi's default footer with a compact Claude-style line:

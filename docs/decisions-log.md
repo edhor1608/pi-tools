@@ -1,5 +1,29 @@
 # Decisions Log
 
+## 2026-08-02 OpenRouter Replaces OpenCode For Paid Specialists
+
+### Context
+
+The 2026-08-01 Pi-native provider policy approved OpenCode as the rare paid specialist route. OpenRouter is now the selected paid specialist provider instead, and active OpenCode credentials will be removed after this package version is installed.
+
+### Decision
+
+Replace only the OpenCode paid-provider portion of **2026-08-01 Pi-Native Personal Agent System** with this policy:
+
+- A root subagent may use OpenRouter only when the model is explicitly qualified as `openrouter/<model-id>`, `allowPaidOpenrouter` is persistently `true` in `~/.pi/agent/pi-tools.json` before the extension loads, and that spawn also sets `allowPaidOpenrouter: true`.
+- OpenRouter is never selected from a bare model id, inherited model, nested orchestrator spawn, or fallback. Claude-family ids still route through Claude Code, including ids qualified with `openrouter/`.
+- `opencode` and `opencode-*` models are retired and rejected explicitly. They are not native alternatives or fallbacks.
+- Existing native non-Claude Pi providers keep their current routing behavior. Missing models or backends remain errors rather than permission to substitute providers.
+- The public spawn field is `allowPaidOpenrouter`. `allowPaidOpencode` remains only as a pre-validation compatibility shim that removes the legacy field from tool calls stored in resumed old sessions; it is not advertised, accepted as active policy configuration, or translated into OpenRouter consent.
+
+### Rationale
+
+The triple gate makes per-token OpenRouter spend deliberate at both persistent-user and individual-spawn boundaries. Provider qualification and the bans on inheritance, nesting, and fallback prevent ambient model availability from turning into paid usage. Explicitly retiring OpenCode is safer than leaving it unguarded while credentials are being removed.
+
+### Consequences
+
+Users who want paid specialist spawns must add `"allowPaidOpenrouter": true` to their own `~/.pi/agent/pi-tools.json`, reload Pi, and opt in again on each root spawn. Package installation does not edit user auth or settings. After this version is installed, active OpenCode credentials must be removed from the global Pi configuration as a separate user-owned follow-up.
+
 ## 2026-08-01 Pi-Native Personal Agent System
 
 ### Context

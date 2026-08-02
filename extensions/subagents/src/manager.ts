@@ -153,9 +153,9 @@ export interface SubagentReadModel {
 export interface CancelResult extends NestedCancelResult {}
 
 export interface SpawnOptions {
-	readonly userAllowsPaidOpencode?: boolean;
-	readonly allowPaidOpencode?: boolean;
-	readonly paidOpencodeConfigPath?: string;
+	readonly userAllowsPaidOpenrouter?: boolean;
+	readonly allowPaidOpenrouter?: boolean;
+	readonly paidOpenrouterConfigPath?: string;
 }
 
 export interface SubagentManagerShape {
@@ -599,9 +599,9 @@ const makeManager = Effect.gen(function* () {
 				inheritedModel: requestedTask.parent.inheritedModel,
 				resolvedModel: resolvedModelForRouting(requestedTask),
 				bareModelProviders,
-				userAllowsPaidOpencode: options?.userAllowsPaidOpencode,
-				allowPaidOpencode: options?.allowPaidOpencode,
-				paidOpencodeConfigPath: options?.paidOpencodeConfigPath,
+				userAllowsPaidOpenrouter: options?.userAllowsPaidOpenrouter,
+				allowPaidOpenrouter: options?.allowPaidOpenrouter,
+				paidOpenrouterConfigPath: options?.paidOpenrouterConfigPath,
 				nestedSpawn: parentId !== undefined,
 			});
 			if ("error" in route) return yield* new SpawnError({ message: route.error });

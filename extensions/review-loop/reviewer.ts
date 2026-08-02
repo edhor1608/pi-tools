@@ -15,7 +15,7 @@
  *    smallest possible surface — `spawn`, `waitFor`, `cancel`, `view.get`.
  *
  * Model routing invariants (Claude-family models -> Claude Code backend,
- * never OpenCode) are enforced inside `manager.spawn` in both paths. A
+ * never paid OpenRouter fallback) are enforced inside `manager.spawn` in both paths. A
  * backend failure surfaces as `ok: false` and becomes FSM state "blocked";
  * there is NO provider fallback of any kind.
  */

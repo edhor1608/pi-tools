@@ -42,11 +42,13 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
 
 type ThinkingLevel = NonNullable<NonNullable<Parameters<typeof createAgentSession>[0]>["thinkingLevel"]>;
 
+const isOpenRouterProvider = (provider: string) => provider.toLowerCase() === "openrouter";
+const isRetiredOpenCodeProvider = (provider: string) => /^opencode(?:$|-)/i.test(provider);
+
 /**
- * Resolve the generic model hint against the parent registry (v1 semantics):
- * "provider/model-id" is exact; a bare id prefers the inherited provider,
- * then must be unambiguous across providers. No hint inherits the parent
- * model; with nothing to inherit, the SDK default applies.
+ * Resolve a model already admitted by the manager's paid-provider gate.
+ * Defense in depth here prevents direct backend use from selecting OpenRouter
+ * by inheritance/bare ambiguity or selecting a retired OpenCode provider.
  */
 function resolvePiModel(
 	registry: ModelRegistry,
@@ -55,24 +57,41 @@ function resolvePiModel(
 ): Model<Api> | undefined {
 	if (!hint) {
 		if (!inherited) return undefined;
+		if (isRetiredOpenCodeProvider(inherited.provider)) {
+			throw new Error(`OpenCode provider "${inherited.provider}" is retired for subagents.`);
+		}
+		if (isOpenRouterProvider(inherited.provider)) {
+			throw new Error(`OpenRouter model "${inherited.provider}/${inherited.id}" requires an explicit provider-qualified model.`);
+		}
 		return registry.find(inherited.provider, inherited.id) ?? undefined;
 	}
 	const slash = hint.indexOf("/");
 	if (slash > 0) {
 		const provider = hint.slice(0, slash);
 		const id = hint.slice(slash + 1);
+		if (isRetiredOpenCodeProvider(provider)) {
+			throw new Error(`OpenCode provider "${provider}" is retired for subagents.`);
+		}
 		const found = registry.find(provider, id);
 		if (found) return found;
 		throw new Error(`Unknown model "${hint}".`);
 	}
-	if (inherited) {
+	if (inherited && !isOpenRouterProvider(inherited.provider) && !isRetiredOpenCodeProvider(inherited.provider)) {
 		const found = registry.find(inherited.provider, hint);
 		if (found) return found;
 	}
-	const matches = registry.getAll().filter((m) => m.id === hint);
-	if (matches.length === 1) return matches[0];
-	if (matches.length > 1) {
-		throw new Error(`Model "${hint}" exists in multiple providers (${matches.map((m) => m.provider).join(", ")}). Use "provider/${hint}".`);
+	const matches = registry.getAll().filter((model) => model.id === hint);
+	const nativeMatches = matches.filter((model) => !isOpenRouterProvider(model.provider) && !isRetiredOpenCodeProvider(model.provider));
+	if (nativeMatches.length === 1) return nativeMatches[0];
+	if (nativeMatches.length > 1) {
+		throw new Error(
+			`Model "${hint}" exists in multiple native providers (${nativeMatches.map((model) => model.provider).join(", ")}). Use "provider/${hint}".`,
+		);
+	}
+	const retired = matches.find((model) => isRetiredOpenCodeProvider(model.provider));
+	if (retired) throw new Error(`OpenCode provider "${retired.provider}" is retired for subagents.`);
+	if (matches.some((model) => isOpenRouterProvider(model.provider))) {
+		throw new Error(`OpenRouter model "openrouter/${hint}" requires an explicit provider-qualified model.`);
 	}
 	throw new Error(`Unknown model "${hint}".`);
 }

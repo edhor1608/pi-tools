@@ -2,7 +2,7 @@
 
 /** Describes fire-and-forget Pi and Claude Code subagents. */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-	"Spawn a fully autonomous background subagent with its own context window and normal host permissions. Choose pi (in-process Pi session that inherits this environment) or claude (Claude Code through the user's existing login). The tool returns an id immediately. The final output is delivered automatically or can be collected with subagent_wait. Claude sessions in orchestrator mode can autonomously create and manage visible Pi or Claude descendants. Children cannot ask the user or see the parent conversation, so prompts must be self-contained.";
+	"Spawn a fully autonomous background subagent with its own context window and normal host permissions. Choose pi (in-process Pi session that inherits this environment) or claude (Claude Code through the user's existing login). Paid OpenRouter specialists require a provider-qualified model plus persistent user and per-spawn opt-ins; OpenCode providers are retired. The tool returns an id immediately. The final output is delivered automatically or can be collected with subagent_wait. Claude sessions in orchestrator mode can autonomously create and manage visible Pi or Claude descendants. Children cannot ask the user or see the parent conversation, so prompts must be self-contained.";
 
 /** Adds background subagent delegation to the parent model's available-tools prompt. */
 export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
@@ -12,6 +12,7 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
 	"Use subagent_spawn to delegate self-contained tasks that can run in the background; give it a complete, standalone prompt. Use orchestrator mode when Claude should dynamically lead further visible Pi or Claude descendants.",
 	"Pick the subagent harness deliberately: use pi by default and Claude Code when requested. Claude-family model hints always route to the Claude Code harness, even when pi was requested.",
+	"Use paid OpenRouter only for an explicitly qualified root spawn after the user enabled allowPaidOpenrouter in pi-tools.json, and set allowPaidOpenrouter for that spawn. Never select OpenRouter by inheritance, bare id, nested spawn, or fallback; OpenCode providers are retired.",
 	"After subagent_spawn, keep working; results arrive automatically. Only call subagent_wait when you cannot proceed without the result.",
 ];
 
@@ -24,7 +25,7 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
 	workingDir: "Working directory for the autonomous child (default: current working directory)",
 	mode: '"worker" for a leaf agent (default), or "orchestrator" to give a Claude session direct host-managed delegation controls.',
 	model:
-		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Claude-family hints and the fable/haiku/opus/sonnet aliases auto-route to Claude Code and drop any provider prefix. Omit for the harness default; pi inherits the current model.',
+		'Model hint interpreted by the harness (pi: "provider/model-id" or model id; claude: a Claude Code model alias). Paid OpenRouter requires an explicit openrouter/model-id root request; OpenCode providers are retired. Claude-family hints and the fable/haiku/opus/sonnet aliases auto-route to Claude Code and drop any provider prefix. Omit for the harness default; pi inherits the current model.',
 	reasoningEffort:
 		"Reasoning effort on a shared scale, mapped to Pi thinking levels or Claude thinking budgets. Omit for the harness default; pi inherits the current level.",
 };

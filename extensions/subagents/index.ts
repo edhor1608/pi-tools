@@ -34,7 +34,7 @@ import {
 	truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import {
 	BACKEND_NAMES,
 	formatElapsed,
@@ -71,20 +71,26 @@ import { openSubagentPicker } from "./src/ui/takeover.ts";
 const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
 const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
 const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024;
-const PAID_OPENCODE_CONFIG_FILE = "pi-tools.json";
+const PAID_OPENROUTER_CONFIG_FILE = "pi-tools.json";
 
-function loadPaidOpenCodeUserGate(configPath: string) {
+function loadPaidOpenRouterUserGate(configPath: string) {
 	try {
 		const parsed: unknown = JSON.parse(fs.readFileSync(configPath, "utf8"));
 		return (
 			typeof parsed === "object" &&
 			parsed !== null &&
-			"allowPaidOpencode" in parsed &&
-			(parsed as { allowPaidOpencode?: unknown }).allowPaidOpencode === true
+			"allowPaidOpenrouter" in parsed &&
+			(parsed as { allowPaidOpenrouter?: unknown }).allowPaidOpenrouter === true
 		);
 	} catch {
 		return false;
 	}
+}
+
+function prepareSubagentSpawnArguments(args: unknown) {
+	if (!args || typeof args !== "object" || !("allowPaidOpencode" in args)) return args;
+	const { allowPaidOpencode: _legacyPaidConsent, ...current } = args as Record<string, unknown>;
+	return current;
 }
 
 function describeSubagent(snap: SubagentSnapshot) {
@@ -114,8 +120,8 @@ function truncatedOutput(snap: SubagentSnapshot, maxBytes = SUBAGENT_OUTPUT_MAX_
 }
 
 export default function (pi: ExtensionAPI) {
-	const paidOpencodeConfigPath = path.join(getAgentDir(), PAID_OPENCODE_CONFIG_FILE);
-	const userAllowsPaidOpencode = loadPaidOpenCodeUserGate(paidOpencodeConfigPath);
+	const paidOpenrouterConfigPath = path.join(getAgentDir(), PAID_OPENROUTER_CONFIG_FILE);
+	const userAllowsPaidOpenrouter = loadPaidOpenRouterUserGate(paidOpenrouterConfigPath);
 	let runtime: SubagentRuntime | undefined;
 	let managerPromise: Promise<SubagentManagerShape> | undefined;
 	let sessionContext: ExtensionContext | undefined;
@@ -272,48 +278,51 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Tools -------------------------------------------------------------
 
+	const subagentSpawnParameters = Type.Object({
+		prompt: Type.String({
+			description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.prompt,
+		}),
+		name: Type.String({
+			description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.name,
+		}),
+		harness: StringEnum(BACKEND_NAMES, {
+			description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.harness,
+		}),
+		working_dir: Type.Optional(
+			Type.String({
+				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir,
+			}),
+		),
+		model: Type.Optional(
+			Type.String({
+				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.model,
+			}),
+		),
+		allowPaidOpenrouter: Type.Optional(
+			Type.Boolean({
+				description: `Per-spawn confirmation for paid OpenRouter. Only effective when Jonas already enabled allowPaidOpenrouter in ${paidOpenrouterConfigPath} before this extension loaded.`,
+			}),
+		),
+		mode: Type.Optional(
+			StringEnum(SUBAGENT_MODES, {
+				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.mode,
+			}),
+		),
+		reasoning_effort: Type.Optional(
+			StringEnum(REASONING_EFFORTS, {
+				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.reasoningEffort,
+			}),
+		),
+	});
+
 	pi.registerTool({
 		name: "subagent_spawn",
 		label: "Spawn Subagent",
 		description: SUBAGENT_SPAWN_TOOL_DESCRIPTION,
 		promptSnippet: SUBAGENT_SPAWN_PROMPT_SNIPPET,
 		promptGuidelines: SUBAGENT_SPAWN_PROMPT_GUIDELINES,
-		parameters: Type.Object({
-			prompt: Type.String({
-				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.prompt,
-			}),
-			name: Type.String({
-				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.name,
-			}),
-			harness: StringEnum(BACKEND_NAMES, {
-				description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.harness,
-			}),
-			working_dir: Type.Optional(
-				Type.String({
-					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir,
-				}),
-			),
-			model: Type.Optional(
-				Type.String({
-					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.model,
-				}),
-			),
-			allowPaidOpencode: Type.Optional(
-				Type.Boolean({
-					description: `Per-spawn confirmation for paid OpenCode. Only effective when Jonas already enabled allowPaidOpencode in ${paidOpencodeConfigPath} before this extension loaded.`,
-				}),
-			),
-			mode: Type.Optional(
-				StringEnum(SUBAGENT_MODES, {
-					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.mode,
-				}),
-			),
-			reasoning_effort: Type.Optional(
-				StringEnum(REASONING_EFFORTS, {
-					description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.reasoningEffort,
-				}),
-			),
-		}),
+		parameters: subagentSpawnParameters,
+		prepareArguments: (args) => prepareSubagentSpawnArguments(args) as Static<typeof subagentSpawnParameters>,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const manager = await getManager();
 
@@ -342,9 +351,9 @@ export default function (pi: ExtensionAPI) {
 						},
 					},
 					{
-						userAllowsPaidOpencode,
-						allowPaidOpencode: params.allowPaidOpencode,
-						paidOpencodeConfigPath,
+						userAllowsPaidOpenrouter,
+						allowPaidOpenrouter: params.allowPaidOpenrouter,
+						paidOpenrouterConfigPath,
 					},
 				),
 				{ signal, interruptMessage: "Subagent spawn aborted." },

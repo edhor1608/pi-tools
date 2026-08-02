@@ -305,6 +305,29 @@ await test("cancellation closes a descendant spawn already in flight", async () 
 	}
 });
 
+await test("nested orchestrators cannot select paid OpenRouter", async () => {
+	controllers.clear();
+	const runtime = createTestRuntime();
+	try {
+		const manager = await runtime.runPromise(SubagentManager);
+		const root = await runTool(runtime, manager.spawn("claude", task("paid-provider-lead", "orchestrator")));
+		const controller = controllers.get("paid-provider-lead");
+		assert.ok(controller);
+		await assert.rejects(
+			controller.spawn({
+				harness: "pi",
+				prompt: "Use a paid specialist",
+				title: "paid-specialist",
+				model: "openrouter/moonshotai/kimi-k2.5",
+			}),
+			/unavailable for nested subagent spawns by policy/,
+		);
+		await runTool(runtime, manager.cancel([root.id]));
+	} finally {
+		await runtime.dispose();
+	}
+});
+
 await test("nested orchestrator capability has a mechanical depth guard", async () => {
 	controllers.clear();
 	const runtime = createTestRuntime();
