@@ -105,7 +105,7 @@ const applyMetadataLine = (ref: ExternalSessionRef, line: string): void => {
 			isObject(record.message)
 		) {
 			const text = claudeText(record.message);
-			if (text) ref.preview = capText(compactInline(text), 80);
+			if (text !== undefined && text.length > 0) ref.preview = capText(compactInline(text), 80);
 		}
 		return;
 	}
@@ -114,7 +114,7 @@ const applyMetadataLine = (ref: ExternalSessionRef, line: string): void => {
 	}
 	if (record.type === "response_item" && isObject(record.payload) && ref.preview === undefined) {
 		const text = codexText(record.payload);
-		if (text) ref.preview = capText(compactInline(text), 80);
+		if (text !== undefined && text.length > 0) ref.preview = capText(compactInline(text), 80);
 	}
 };
 

@@ -80,7 +80,8 @@ export const summarizeToolCalls = (toolCalls: NormalizedToolCall[]): string => {
 
 const sessionName = (conversation: NormalizedConversation): string => {
 	const firstUser = conversation.events.find((event) => event.kind === "user");
-	const preview = firstUser?.text ? capText(compactInline(firstUser.text), 60) : conversation.sourceSessionId;
+	const preview =
+		firstUser?.text !== undefined && firstUser.text.length > 0 ? capText(compactInline(firstUser.text), 60) : conversation.sourceSessionId;
 	return `imported (${conversation.source}): ${preview}`;
 };
 

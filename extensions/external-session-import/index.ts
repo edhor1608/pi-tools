@@ -23,8 +23,8 @@ const formatPickerLabel = (session: ExternalSessionRef): string => {
 	const hour = String(date.getHours()).padStart(2, "0");
 	const minute = String(date.getMinutes()).padStart(2, "0");
 	const source = session.source === "codex-legacy" ? "codex" : session.source;
-	const cwd = session.cwd ? basename(session.cwd) : "unknown cwd";
-	const preview = session.preview ? ` · “${session.preview}”` : "";
+	const cwd = session.cwd !== undefined && session.cwd.length > 0 ? basename(session.cwd) : "unknown cwd";
+	const preview = session.preview !== undefined && session.preview.length > 0 ? ` · “${session.preview}”` : "";
 	return `${source} · ${month}-${day} ${hour}:${minute} · ${cwd}${preview}`;
 };
 
@@ -150,7 +150,7 @@ const renderToolLine = (call: ExternalImportTools["toolCalls"][number]): string 
 
 const registerRenderers = (pi: ExtensionAPI): void => {
 	pi.registerEntryRenderer<ExternalImportProvenance>("external-import", (entry, _options, theme) => {
-		const cwd = entry.data?.sourceCwd ? ` · ${entry.data.sourceCwd}` : "";
+		const cwd = entry.data?.sourceCwd !== undefined && entry.data.sourceCwd.length > 0 ? ` · ${entry.data.sourceCwd}` : "";
 		return new Text(
 			theme.fg("dim", `⇩ imported from ${entry.data?.source ?? "external"} · ${entry.data?.sourceSessionId ?? "unknown"}${cwd}`),
 			0,
@@ -176,11 +176,11 @@ const runImport = async (ctx: ExtensionCommandContext, source: "claude" | "codex
 	}
 	const modelIdentity: ModelIdentity = { api: ctx.model.api, provider: ctx.model.provider, modelId: ctx.model.id };
 	const selected = await pickSession(ctx, source, filter);
-	if (!selected) return;
+	if (selected === undefined) return;
 	const targetCwd = await pickTargetCwd(ctx, selected.cwd);
-	if (!targetCwd) return;
+	if (targetCwd === undefined || targetCwd.length === 0) return;
 	const conversation = await parseWithLoader(ctx, selected);
-	if (!conversation) return;
+	if (conversation === null) return;
 	if (conversation.events.length === 0) {
 		ctx.ui.notify("External session contains nothing to import", "warning");
 		return;
@@ -192,7 +192,7 @@ const runImport = async (ctx: ExtensionCommandContext, source: "claude" | "codex
 	const sessionManager = SessionManager.create(targetCwd);
 	const result = importConversation(sessionManager, conversation, modelIdentity, Date.now());
 	const sessionFile = sessionManager.getSessionFile();
-	if (!sessionFile) {
+	if (sessionFile === undefined || sessionFile.length === 0) {
 		ctx.ui.notify("Imported session could not be persisted", "error");
 		return;
 	}
